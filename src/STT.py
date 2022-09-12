@@ -1,7 +1,6 @@
 from dataclasses import dataclass
-from sre_parse import State
-from tabnanny import check
-from typing import Dict, List, Optional, Tuple
+import enum
+from typing import Dict, List, Tuple
 from enum import Enum
 from copy import deepcopy
 from __future__ import annotations
@@ -385,20 +384,23 @@ def fetch_store(state: State_STT, static_instruction: Instruction):
 
 #### load helper functions
 
-# TODO: implement (STT formal pg. 12)
-def StoresAreReady(state: State_STT, rob_index: int) -> bool:
-    return
+def StoresAreReady(state: State_STT, rob_i: int) -> bool:
+    for rob_j in state.sq:
+        if rob_j < rob_i:
+            _, older_store, _ = state.rob.seq[rob_j]
 
-# TODO: implement (STT formal pg. 12)
+            assert(older_store.name == Instruction_Name.STORE)
+
+            x_b: int = older_store.operands[0]
+
+            if not state.ready[x_b]:
+                return False
+
+    return True
+
 def CanForward(state: State_STT, rob_i: int, x_a: int, rob_j: int, x_v: int) -> bool:
-    # is rob[j] a *ready* store to the same address as rob[i] is loading from, where `j` is younger than `i`?
-    # are there any other *ready* stores to the same address that are older than `j` but still younger than `i`?
-    # iff both conditions are true, then return true
-    # UNLIKELY, but x_v is maybe meant as an output parameter that is set when returning true...
-    #   ...in that case, maybe return a tuple of either (True, x_v) or (False, None): Tuple[bool, Optional[int]]
-
-    in_store_queue = rob_j in state.sq
-    is_younger = rob_j < rob_i
+    in_store_queue: bool = rob_j in state.sq
+    is_younger: bool = rob_j < rob_i
 
     _, dynamic_instruction, _ = state.rob.seq[rob_j]
 
@@ -406,13 +408,23 @@ def CanForward(state: State_STT, rob_i: int, x_a: int, rob_j: int, x_v: int) -> 
 
     x_b: int = dynamic_instruction.operands[0]
 
-    registers_ready = state.ready[x_b] and state.ready[x_v]
+    registers_ready: bool = state.ready[x_b] and state.ready[x_v]
 
-    addresses_match = state.reg[x_a] == state.reg[x_b]
+    addresses_match: bool = state.reg[x_a] == state.reg[x_b]
 
-    no_later_stores = True # TODO: Change to implement actual behaviour
+    no_younger_stores: bool = True
+    for rob_k in state.sq:
+        if rob_j < rob_k < rob_i:
+            _, younger_instruction, _ = state.rob.seq[rob_k]
 
-    return in_store_queue and is_younger and registers_ready and addresses_match and no_later_stores
+            k_v: int = younger_instruction.operands[1]
+
+            if CanForward(state, rob_i, x_a, rob_k, k_v):
+                no_younger_stores = False
+                break
+
+
+    return in_store_queue and is_younger and registers_ready and addresses_match and no_younger_stores
 
 def loadResult(state: State_STT, rob_i: int, x_a: int, oldRes: int) -> int:
     for rob_j in state.sq:
@@ -426,7 +438,10 @@ def loadResult(state: State_STT, rob_i: int, x_a: int, oldRes: int) -> int:
     
     return oldRes
 
-
+# TODO: decide how to implement (STT formal pg. 8)
+# "for a given sequence of memory addresses already accessed and the next address to access returns the number of cycles it takes to load the value by that address"
+def LoadLat(cache: List[int], target_address: int) -> int:
+    return 0
 
 
 ####
@@ -530,3 +545,89 @@ def execute_branch_fail(state: State_STT, rob_index: int) -> State_STT:
 
     return new_state
 
+def execute_load_begin_get_s(state: State_STT, rob_index: int, t: int) -> State_STT:
+    new_state = deepcopy(state)
+
+    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+
+    x_d: int = dynamic_instruction.operands[0]
+    x_a: int = dynamic_instruction.operands[1]
+
+    assert(x_a in state.ready and state.ready[x_a] is True)
+    assert(x_d in state.ready and state.ready[x_d] is False)
+
+    assert(StoresAreReady(state, rob_index))
+
+    t_end = t + LoadLat(state.C, state.reg[x_a])
+
+    lq_entry = None
+    lq_index = None
+    for i, entry in enumerate(state.lq):
+        if entry[0] == rob_index:
+            assert(entry[2] is None) # might be unnecessary
+            lq_entry = deepcopy(entry)
+            lq_index = i
+            break
+
+    assert(lq_entry is not None and lq_index is not None)
+
+    lq_entry[2] = t_end # (i, False, ⊥) -> (i, False, t_end)
+    new_state.lq[lq_index] = lq_entry
+
+    new_state.C.append(state.reg[x_a])
+
+    return new_state
+
+def execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> State_STT:
+    new_state = deepcopy(state)
+
+    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+
+    x_d: int = dynamic_instruction.operands[0]
+    x_a: int = dynamic_instruction.operands[1]
+
+    lq_entry = None
+    lq_index = None
+    for i, entry in enumerate(state.lq):
+        if entry[0] == rob_index:
+            assert(entry[2] is not None) # might be unnecessary
+            lq_entry = deepcopy(entry)
+            lq_index = i
+            break
+
+    assert(lq_entry is not None and lq_index is not None)
+
+    t_end = lq_entry[2]
+
+    assert(t_end is not None and t_end >= t)
+
+    new_state.reg[x_d] = state.mem[state.reg[x_a]]
+
+    lq_entry[1] = True # (i, False, t_end) -> (i, True, t_end)
+    new_state.lq[lq_index] = lq_entry
+
+    return new_state
+
+def execute_load_complete(state: State_STT, rob_index: int) -> State_STT:
+    new_state = deepcopy(state)
+
+    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+
+    x_d: int = dynamic_instruction.operands[0]
+    x_a: int = dynamic_instruction.operands[1]
+
+    lq_entry = None
+    for entry in state.lq:
+        if entry[0] == rob_index and entry[1] is True: # (i, True, _) ∈ lq
+            lq_entry = entry
+            break
+
+    assert(lq_entry is not None)
+
+    res: int = loadResult(state, rob_index, x_a, state.reg[x_d])
+
+    new_state.reg[x_d] = res
+
+    new_state.ready[x_d] = True
+
+    return new_state
