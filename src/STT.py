@@ -1,15 +1,15 @@
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
-from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
+from enum import Enum, auto
 from copy import deepcopy
 from __future__ import annotations
 
 class Instruction_Name(Enum):
-    IMMED   = 0
-    OP      = 1
-    BRANCH  = 2
-    LOAD    = 3
-    STORE   = 4
+    IMMED   = auto()
+    OP      = auto()
+    BRANCH  = auto()
+    LOAD    = auto()
+    STORE   = auto()
 
 # TODO: see what can be re-used between in_order and STT instructions.
 # They might be identical by virtue of the register renaming abstracting the difference.
@@ -44,8 +44,8 @@ class BrPr:
 
 @dataclass
 class ReorderBuffer:
-    seq: List[Tuple[int, Instruction, bool]]
-    head: int
+    seq     : List[Tuple[int, Instruction, bool]]
+    head    : int
 
 # TODO: change to dataclass like `ReorderBuffer`?
 class State_STT:
@@ -446,10 +446,11 @@ def LoadLat(cache: List[int], target_address: int) -> int:
 ####
 
 # TODO: Should potentially change assertions to if statements
-# TODO: Change execute events that take an `Instruction` parameter to take an rob_index instead (as in the branch events etc.)
 
-def execute_immediate(state: State_STT, dynamic_instruction: Instruction) -> State_STT:
+def execute_immediate(state: State_STT, rob_index: int) -> State_STT:
     new_state = deepcopy(state)
+
+    _, dynamic_instruction, _ = state.rob.seq[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
     k: int = dynamic_instruction.operands[1]
@@ -461,8 +462,10 @@ def execute_immediate(state: State_STT, dynamic_instruction: Instruction) -> Sta
 
     return new_state
 
-def execute_arithmetic(state: State_STT, dynamic_instruction: Instruction) -> State_STT:
+def execute_arithmetic(state: State_STT, rob_index: int) -> State_STT:
     new_state = deepcopy(state)
+
+    _, dynamic_instruction, _ = state.rob.seq[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
     x_a: int = dynamic_instruction.operands[1]
@@ -703,3 +706,33 @@ def commit_store(state: State_STT) -> State_STT:
     new_state.sq = [ entry for entry in state.sq if entry[0] is not state.rob.head ]
 
     return new_state
+
+###
+
+class M_Event_Name(Enum):
+    FETCH_IMMEDIATE             = auto()
+    FETCH_ARITHMETIC            = auto()
+    FETCH_BRANCH                = auto()
+    FETCH_LOAD                  = auto()
+    FETCH_STORE                 = auto()
+    EXECUTE_IMMEDIATE           = auto()
+    EXECUTE_ARITHMETIC          = auto()
+    EXECUTE_BRANCH_SUCCESS      = auto()
+    EXECUTE_BRANCH_FAILURE      = auto()
+    EXECUTE_LOAD_BEGIN_GET_S    = auto()
+    EXECUTE_LOAD_END_GET_S      = auto()
+    EXECUTE_LOAD_COMPLETE       = auto()
+    COMMIT_IMMEDIATE            = auto()
+    COMMIT_ARITHMETIC           = auto()
+    COMMIT_BRANCH               = auto()
+    COMMIT_LOAD                 = auto()
+    COMMIT_STORE                = auto()
+
+@dataclass
+class M_Event:
+    name    : M_Event_Name
+    i       : Optional[int]
+
+    def __init__(self, name: M_Event_Name, i: Optional[int]):
+        self.name = name
+        self.i = i

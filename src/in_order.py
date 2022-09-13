@@ -1,5 +1,5 @@
 from typing import Dict, List, Tuple, TypeAlias
-from enum import Enum
+from enum import Enum, auto
 
 class State_InO:
     def __init__(self, pc: int, mem: Dict, reg: Dict):
@@ -11,11 +11,11 @@ class State_InO:
         return f'State_InO(\n\tpc: {self.pc}\n\tmem: {self.mem}\n\treg: {self.reg}\n)'
 
 class Instruction_Name(Enum):
-    IMMED   = 0
-    OP      = 1
-    BRANCH  = 2
-    LOAD    = 3
-    STORE   = 4
+    IMMED   = auto()
+    OP      = auto()
+    BRANCH  = auto()
+    LOAD    = auto()
+    STORE   = auto()
 
 class Instruction:
     def __init__(self, name: Instruction_Name, operands: List[int]):
