@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from turtle import st
 from typing import Any, Dict, List, Optional, Tuple
 from enum import Enum, auto
 from copy import deepcopy
@@ -20,9 +21,6 @@ class Instruction:
 
     def __str__(self):
         return f'Instruction(\n\tname: {self.name}\n\toperands: {self.operands}\n)'
-
-    def perform(self):
-        return
 
 # abstract branch predictor
 # TODO: decide on how to model branch prediction. Random would be easiest and shouldn't cause any problems.
@@ -445,9 +443,9 @@ def LoadLat(cache: List[int], target_address: int) -> int:
 
 ####
 
-# TODO: Should potentially change assertions to if statements
-
 def execute_immediate(state: State_STT, rob_index: int) -> State_STT:
+    assert(enabled_execute_immediate(state, rob_index)) # result is undefined if event isn't enabled
+
     new_state = deepcopy(state)
 
     _, dynamic_instruction, _ = state.rob.seq[rob_index]
@@ -455,14 +453,24 @@ def execute_immediate(state: State_STT, rob_index: int) -> State_STT:
     x_d: int = dynamic_instruction.operands[0]
     k: int = dynamic_instruction.operands[1]
 
-    assert(x_d in state.ready and state.ready[x_d] is False)
-
     new_state.reg[x_d] = k
     new_state.ready[x_d] = True
 
     return new_state
 
+def enabled_execute_immediate(state: State_STT, rob_index: int) -> bool:
+    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+
+    x_d: int = dynamic_instruction.operands[0]
+
+    if x_d not in state.ready or state.ready[x_d] is True:
+        return False
+    
+    return True
+
 def execute_arithmetic(state: State_STT, rob_index: int) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
     _, dynamic_instruction, _ = state.rob.seq[rob_index]
@@ -471,10 +479,10 @@ def execute_arithmetic(state: State_STT, rob_index: int) -> State_STT:
     x_a: int = dynamic_instruction.operands[1]
     x_b: int = dynamic_instruction.operands[2]
 
-    assert(x_d in state.ready and state.ready[x_d] is False)
+    assert(x_d in state.ready and state.ready[x_d] is False) # implement specific enabled_* function for this
 
-    assert(x_a in state.ready and state.ready[x_a] is True)
-    assert(x_b in state.ready and state.ready[x_b] is True)
+    assert(x_a in state.ready and state.ready[x_a] is True) # implement specific enabled_* function for this
+    assert(x_b in state.ready and state.ready[x_b] is True) # implement specific enabled_* function for this
 
     new_state.reg[x_d] = state.reg[x_a] + state.reg[x_b] # Assuming that `op` is always addition
 
@@ -483,6 +491,8 @@ def execute_arithmetic(state: State_STT, rob_index: int) -> State_STT:
     return new_state
 
 def execute_branch_success(state: State_STT, rob_index: int) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
     origin_pc, dynamic_instruction, branch_prediction = state.rob.seq[rob_index]
@@ -491,11 +501,11 @@ def execute_branch_success(state: State_STT, rob_index: int) -> State_STT:
     x_c: int = dynamic_instruction.operands[0]
     x_d: int = dynamic_instruction.operands[1]
 
-    assert(x_c in state.ready and state.ready[x_c] is True)
-    assert(x_d in state.ready and state.ready[x_d] is True)
+    assert(x_c in state.ready and state.ready[x_c] is True) # implement specific enabled_* function for this
+    assert(x_d in state.ready and state.ready[x_d] is True) # implement specific enabled_* function for this
 
-    assert(b == state.reg[x_c])
-    assert(spc  == state.reg[x_d])
+    assert(b == state.reg[x_c]) # implement specific enabled_* function for this
+    assert(spc  == state.reg[x_d]) # implement specific enabled_* function for this
 
     new_bp = new_state.bp.second_update(origin_pc, state.reg[x_c], state.reg[x_d])
     new_state.bp = new_bp
@@ -505,6 +515,8 @@ def execute_branch_success(state: State_STT, rob_index: int) -> State_STT:
     return new_state
 
 def execute_branch_fail(state: State_STT, rob_index: int) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
     origin_pc, dynamic_instruction, branch_prediction = state.rob.seq[rob_index]
@@ -513,10 +525,10 @@ def execute_branch_fail(state: State_STT, rob_index: int) -> State_STT:
     x_c: int = dynamic_instruction.operands[0]
     x_d: int = dynamic_instruction.operands[1]
 
-    assert(x_c in state.ready and state.ready[x_c] is True)
-    assert(x_d in state.ready and state.ready[x_d] is True)
+    assert(x_c in state.ready and state.ready[x_c] is True) # implement specific enabled_* function for this
+    assert(x_d in state.ready and state.ready[x_d] is True) # implement specific enabled_* function for this
 
-    assert(b is not state.reg[x_c] or spc is not state.reg[x_d])
+    assert(b is not state.reg[x_c] or spc is not state.reg[x_d]) # implement specific enabled_* function for this
 
     new_pc = state.reg[x_d] if state.reg[x_c] else origin_pc + 1
     new_state.pc = new_pc
@@ -548,6 +560,8 @@ def execute_branch_fail(state: State_STT, rob_index: int) -> State_STT:
     return new_state
 
 def execute_load_begin_get_s(state: State_STT, rob_index: int, t: int) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
     _, dynamic_instruction, _ = state.rob.seq[rob_index]
@@ -555,10 +569,10 @@ def execute_load_begin_get_s(state: State_STT, rob_index: int, t: int) -> State_
     x_d: int = dynamic_instruction.operands[0]
     x_a: int = dynamic_instruction.operands[1]
 
-    assert(x_a in state.ready and state.ready[x_a] is True)
-    assert(x_d in state.ready and state.ready[x_d] is False)
+    assert(x_a in state.ready and state.ready[x_a] is True) # implement specific enabled_* function for this
+    assert(x_d in state.ready and state.ready[x_d] is False) # implement specific enabled_* function for this
 
-    assert(StoresAreReady(state, rob_index))
+    assert(StoresAreReady(state, rob_index)) # implement specific enabled_* function for this
 
     t_end = t + LoadLat(state.C, state.reg[x_a])
 
@@ -581,6 +595,8 @@ def execute_load_begin_get_s(state: State_STT, rob_index: int, t: int) -> State_
     return new_state
 
 def execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
     _, dynamic_instruction, _ = state.rob.seq[rob_index]
@@ -592,7 +608,6 @@ def execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> State_ST
     lq_index = None
     for i, entry in enumerate(state.lq):
         if entry[0] == rob_index:
-            assert(entry[2] is not None) # might be unnecessary
             lq_entry = deepcopy(entry)
             lq_index = i
             break
@@ -601,7 +616,7 @@ def execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> State_ST
 
     t_end = lq_entry[2]
 
-    assert(t_end is not None and t_end >= t)
+    assert(t_end is not None and t_end >= t) # implement specific enabled_* function for this
 
     new_state.reg[x_d] = state.mem[state.reg[x_a]]
 
@@ -611,6 +626,8 @@ def execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> State_ST
     return new_state
 
 def execute_load_complete(state: State_STT, rob_index: int) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
     _, dynamic_instruction, _ = state.rob.seq[rob_index]
@@ -618,6 +635,7 @@ def execute_load_complete(state: State_STT, rob_index: int) -> State_STT:
     x_d: int = dynamic_instruction.operands[0]
     x_a: int = dynamic_instruction.operands[1]
 
+    ### implement specific enabled_* function for this ###
     lq_entry = None
     for entry in state.lq:
         if entry[0] == rob_index and entry[1] is True: # (i, True, _) ∈ lq
@@ -625,6 +643,7 @@ def execute_load_complete(state: State_STT, rob_index: int) -> State_STT:
             break
 
     assert(lq_entry is not None)
+    ######################################################
 
     res: int = loadResult(state, rob_index, x_a, state.reg[x_d])
 
@@ -637,50 +656,60 @@ def execute_load_complete(state: State_STT, rob_index: int) -> State_STT:
 ### commit events
 
 def commit_immediate(state: State_STT) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
     _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
 
     x_d: int = dynamic_instruction.operands[0]
 
-    assert(x_d in state.ready and state.ready[x_d] is True)
+    assert(x_d in state.ready and state.ready[x_d] is True) # implement specific enabled_* function for this
 
     new_state.rob.head += 1
 
     return new_state
 
 def commit_arithmetic(state: State_STT) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
     _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
 
     x_d: int = dynamic_instruction.operands[0]
 
-    assert(x_d in state.ready and state.ready[x_d] is True)
+    assert(x_d in state.ready and state.ready[x_d] is True) # implement specific enabled_* function for this
 
     new_state.rob.head += 1
 
     return new_state
 
 def commit_branch(state: State_STT) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
+    ### implement specific enabled_* function for this ###
     checkpoint_indices = [ checkpoint[0] for checkpoint in state.ckpt ]
 
     assert(state.rob.head not in checkpoint_indices)
+    ######################################################
 
     new_state.rob.head += 1
 
     return new_state
 
 def commit_load(state: State_STT) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
     _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
 
     x_d: int = dynamic_instruction.operands[0]
 
-    assert(x_d in state.ready and state.ready[x_d] is True)
+    assert(x_d in state.ready and state.ready[x_d] is True) # implement specific enabled_* function for this
 
     new_state.rob.head += 1
 
@@ -689,6 +718,8 @@ def commit_load(state: State_STT) -> State_STT:
     return new_state
 
 def commit_store(state: State_STT) -> State_STT:
+    # TODO: define enabled function and assert that it holds
+
     new_state = deepcopy(state)
 
     _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
@@ -696,8 +727,8 @@ def commit_store(state: State_STT) -> State_STT:
     x_a: int = dynamic_instruction.operands[0]
     x_v: int = dynamic_instruction.operands[1]
 
-    assert(x_a in state.ready and state.ready[x_a] is True)
-    assert(x_v in state.ready and state.ready[x_v] is True)
+    assert(x_a in state.ready and state.ready[x_a] is True) # implement specific enabled_* function for this
+    assert(x_v in state.ready and state.ready[x_v] is True) # implement specific enabled_* function for this
 
     new_state.mem[state.reg[x_a]] = state.reg[x_v]
 
@@ -718,7 +749,7 @@ class M_Event_Name(Enum):
     EXECUTE_IMMEDIATE           = auto()
     EXECUTE_ARITHMETIC          = auto()
     EXECUTE_BRANCH_SUCCESS      = auto()
-    EXECUTE_BRANCH_FAILURE      = auto()
+    EXECUTE_BRANCH_FAIL         = auto()
     EXECUTE_LOAD_BEGIN_GET_S    = auto()
     EXECUTE_LOAD_END_GET_S      = auto()
     EXECUTE_LOAD_COMPLETE       = auto()
@@ -730,9 +761,65 @@ class M_Event_Name(Enum):
 
 @dataclass
 class M_Event:
-    name    : M_Event_Name
-    i       : Optional[int]
+    name        : M_Event_Name
+    rob_index   : Optional[int]
+    instruction : Optional[Instruction]
 
-    def __init__(self, name: M_Event_Name, i: Optional[int]):
+    def __init__(self, name: M_Event_Name, rob_index: Optional[int], instruction : Optional[Instruction]):
         self.name = name
-        self.i = i
+        self.rob_index = rob_index
+        self.instruction = instruction
+
+def perform(state: State_STT, event: M_Event, t: int) -> State_STT:
+    match event.name:
+        case M_Event_Name.FETCH_IMMEDIATE:
+            return fetch_immediate(state, event.instruction)
+
+        case M_Event_Name.FETCH_ARITHMETIC:
+            return fetch_arithmetic(state, event.instruction)
+
+        case M_Event_Name.FETCH_BRANCH:
+            return fetch_branch(state, event.instruction)
+
+        case M_Event_Name.FETCH_LOAD:
+            return fetch_load(state, event.instruction)
+
+        case M_Event_Name.FETCH_STORE:
+            return fetch_store(state, event.instruction)
+
+        case M_Event_Name.EXECUTE_IMMEDIATE:
+            return execute_immediate(state, event.rob_index)
+
+        case M_Event_Name.EXECUTE_ARITHMETIC:
+            return execute_arithmetic(state, event.rob_index)
+
+        case M_Event_Name.EXECUTE_BRANCH_SUCCESS:
+            return execute_branch_success(state, event.rob_index)
+
+        case M_Event_Name.EXECUTE_BRANCH_FAIL:
+            return execute_branch_fail(state, event.rob_index)
+
+        case M_Event_Name.EXECUTE_LOAD_BEGIN_GET_S:
+            return execute_load_begin_get_s(state, event.rob_index, t)
+
+        case M_Event_Name.EXECUTE_LOAD_END_GET_S:
+            return execute_load_end_get_s(state, event.rob_index, t)
+
+        case M_Event_Name.EXECUTE_LOAD_COMPLETE:
+            return execute_load_complete(state, event.rob_index)
+
+        case M_Event_Name.COMMIT_IMMEDIATE:
+            return commit_immediate(state)
+
+        case M_Event_Name.COMMIT_ARITHMETIC:
+            return commit_arithmetic(state)
+
+        case M_Event_Name.COMMIT_BRANCH:
+            return commit_branch(state)
+
+        case M_Event_Name.COMMIT_LOAD:
+            return commit_load(state)
+
+        case M_Event_Name.COMMIT_STORE:
+            return commit_store(state)
+            
