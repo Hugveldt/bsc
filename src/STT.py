@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import enum
 from typing import Dict, List, Tuple
 from enum import Enum
 from copy import deepcopy
@@ -629,5 +628,78 @@ def execute_load_complete(state: State_STT, rob_index: int) -> State_STT:
     new_state.reg[x_d] = res
 
     new_state.ready[x_d] = True
+
+    return new_state
+
+### commit events
+
+def commit_immediate(state: State_STT) -> State_STT:
+    new_state = deepcopy(state)
+
+    _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
+
+    x_d: int = dynamic_instruction.operands[0]
+
+    assert(x_d in state.ready and state.ready[x_d] is True)
+
+    new_state.rob.head += 1
+
+    return new_state
+
+def commit_arithmetic(state: State_STT) -> State_STT:
+    new_state = deepcopy(state)
+
+    _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
+
+    x_d: int = dynamic_instruction.operands[0]
+
+    assert(x_d in state.ready and state.ready[x_d] is True)
+
+    new_state.rob.head += 1
+
+    return new_state
+
+def commit_branch(state: State_STT) -> State_STT:
+    new_state = deepcopy(state)
+
+    checkpoint_indices = [ checkpoint[0] for checkpoint in state.ckpt ]
+
+    assert(state.rob.head not in checkpoint_indices)
+
+    new_state.rob.head += 1
+
+    return new_state
+
+def commit_load(state: State_STT) -> State_STT:
+    new_state = deepcopy(state)
+
+    _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
+
+    x_d: int = dynamic_instruction.operands[0]
+
+    assert(x_d in state.ready and state.ready[x_d] is True)
+
+    new_state.rob.head += 1
+
+    new_state.lq = [ entry for entry in state.lq if entry[0] is not state.rob.head ]
+
+    return new_state
+
+def commit_store(state: State_STT) -> State_STT:
+    new_state = deepcopy(state)
+
+    _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
+
+    x_a: int = dynamic_instruction.operands[0]
+    x_v: int = dynamic_instruction.operands[1]
+
+    assert(x_a in state.ready and state.ready[x_a] is True)
+    assert(x_v in state.ready and state.ready[x_v] is True)
+
+    new_state.mem[state.reg[x_a]] = state.reg[x_v]
+
+    new_state.rob.head += 1
+
+    new_state.sq = [ entry for entry in state.sq if entry[0] is not state.rob.head ]
 
     return new_state
