@@ -1,10 +1,9 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from sre_parse import State
-from turtle import st
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TypeAlias
 from enum import Enum, auto
 from copy import deepcopy
-from __future__ import annotations
 
 class Instruction_Name(Enum):
     IMMED   = auto()
@@ -26,6 +25,9 @@ class Instruction:
 # abstract branch predictor
 # TODO: decide on how to model branch prediction. Random would be easiest and shouldn't cause any problems.
 class BrPr:
+    def __init__(self):
+        pass
+
     def first_update(self, b: bool) -> BrPr:
         # TODO: define (STT formal pg. 7)
         # "The history register (global or local) is updated with the predicted direction b."
@@ -79,6 +81,26 @@ class State_STT:
         # ...
         self.next_fresh = next_fresh
         return
+
+    def __str__(self):
+        s  = f'---- State_STT ------------'
+        s += f'\n\tprogram counter: {self.pc}'
+        s += f'\n\tmemory: {self.mem}'
+        s += f'\n\tregisters: {self.reg}'
+        s += f'\n\tready: {self.ready}'
+        s += f'\n\trenaming table: {self.rt}'
+        s += f'\n\treorder buffer (head: {self.rob.head}): {self.rob.seq}'
+        s += f'\n\tload queue: {self.lq}'
+        s += f'\n\tstore queue: {self.sq}'
+        s += f'\n\tbranch predictor: N/A'
+        s += f'\n\tbranch checkpoints: {self.ckpt}'
+        s += f'\n\tcache: {self.C}'
+        s += f'\n\ttaint: {self.T}'
+        s += f'\n---------------------------'
+
+        return s
+
+
 
 # TODO: need to decide whether or not static and dynamic instructions should be different classes
 def rename(state: State_STT, static_instruction: Instruction) -> Tuple[Dict, Instruction]:
@@ -967,10 +989,41 @@ def fetch_event(instruction: Instruction) -> M_Event:
     
     return M_Event(name=event_name, rob_index=None, instruction=instruction)
 
-
-# TODO: implement (STT formal pg. 13)
 def execute_event(state: State_STT, rob_index: int) -> M_Event:
-    return
+    _, instruction, _ = state.rob.seq[rob_index]
+
+    event_name: M_Event_Name = None
+
+    match instruction.name:
+        case Instruction_Name.IMMED:
+            event_name = M_Event_Name.EXECUTE_IMMEDIATE
+
+        case Instruction_Name.OP:
+            event_name = M_Event_Name.EXECUTE_ARITHMETIC
+
+        case Instruction_Name.BRANCH:
+            if enabled_execute_branch_success(state, rob_index):
+                event_name = M_Event_Name.EXECUTE_BRANCH_SUCCESS
+            elif enabled_execute_branch_fail(state, rob_index):
+                event_name = M_Event_Name.EXECUTE_BRANCH_FAIL
+            else:
+                raise Exception("Neither of the execute events, branch success or branch failure, were enabled...")
+                
+        case Instruction_Name.LOAD:
+            if enabled_execute_load_complete(state, rob_index):
+                event_name = M_Event_Name.EXECUTE_LOAD_COMPLETE
+            elif enabled_execute_load_end_get_s(state, rob_index):
+                event_name = M_Event_Name.EXECUTE_LOAD_END_GET_S
+            elif enabled_execute_load_begin_get_s(state, rob_index):
+                event_name = M_Event_Name.EXECUTE_LOAD_BEGIN_GET_S
+            else:
+                raise Exception("None of the execute load events were enabled...")
+
+        case Instruction_Name.STORE:
+            raise Exception("The processor tried to execute a store instruction (Should only be able to fetch or commit)")
+            
+
+    return M_Event(name=event_name, rob_index=rob_index, instruction=None)
 
 def commit_event(instruction: Instruction) -> M_Event:
     event_name: M_Event_Name = None
@@ -989,8 +1042,112 @@ def commit_event(instruction: Instruction) -> M_Event:
     
     return M_Event(name=event_name, rob_index=None, instruction=None)
 
-# TODO: implement (STT formal pg. 13)
-def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
-    return
-
+# TODO: Work out why this is necessary...
+# ...for ready to be necessary (instead of just using enabled(start_state)) the following must exist:
 # unenabled but ready execute events that since the beginning of the cycle have become enabled by having their non-ready conditions met
+# -> non ready conditions like: storesAreReady(i), t >= t_end etc.
+def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
+    match execute_event.name:
+        case M_Event_Name.EXECUTE_IMMEDIATE:
+            return True
+
+        case M_Event_Name.EXECUTE_LOAD_END_GET_S:
+            return True
+
+        case M_Event_Name.EXECUTE_LOAD_COMPLETE:
+            return True
+
+        case M_Event_Name.EXECUTE_ARITHMETIC:
+            _, dynamic_instruction, _ = state.rob.seq[execute_event.rob_index]
+            operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
+            
+            return operands_ready[1] and operands_ready[2]
+
+        case M_Event_Name.EXECUTE_BRANCH_SUCCESS:
+            return operands_ready[0] and operands_ready[1]
+
+        case M_Event_Name.EXECUTE_BRANCH_FAIL:
+            return operands_ready[0] and operands_ready[1]
+
+        case M_Event_Name.EXECUTE_LOAD_BEGIN_GET_S:
+            return operands_ready[1]
+
+
+Program: TypeAlias = List[Instruction]
+
+example_program: Program = [
+    Instruction(Instruction_Name.IMMED, [0,60]),
+    Instruction(Instruction_Name.IMMED, [1,61]),
+    Instruction(Instruction_Name.IMMED, [2,62]),
+    Instruction(Instruction_Name.IMMED, [3,63]),
+    Instruction(Instruction_Name.IMMED, [4,64]),
+    Instruction(Instruction_Name.IMMED, [5,65]),
+    Instruction(Instruction_Name.IMMED, [6,66]),
+    Instruction(Instruction_Name.IMMED, [7,67]),
+    None
+]
+
+state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],{},0)
+def STT_Processor(P: Program) -> None:
+    state = state_init
+    t = 0
+    halt =  False
+
+    while not halt:
+        state, halt = STT_Logic(P, state, t)
+        t += 1
+
+COMMIT_WIDTH: int = 2
+FETCH_WIDTH: int = 2
+
+def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
+    state_snapshot: State_STT = deepcopy(state)
+
+    print(f"STT_Logic for timestep {t}")
+
+    print(state)
+
+    print("\n\t[commit]\n")
+    for i in range(0, COMMIT_WIDTH):
+        if not state.rob.seq:
+            break
+        e: M_Event = commit_event(state.rob.seq[state.rob.head][1])
+        if enabled(state, e, t):
+            print("\t - performing commit")
+            state = perform(state, e, t)
+        else:
+            break
+
+    print(state)
+
+    print("\n\t[fetch]\n")
+    if P[state.pc] is not None:
+        for i in range(0, FETCH_WIDTH):
+            e: M_Event = fetch_event(P[state.pc])
+            state.T = taint(state, P[state.pc])
+            print("\t - performing fetch")
+            state = perform(state, e, t)
+            if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
+                break
+
+    print(state)
+    
+    print("\n\t[execute]\n")
+    for i in range(state.rob.head, len(state_snapshot.rob.seq)): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
+        e: M_Event = execute_event(state, i)
+        if enabled(state, e, t) and ready(state_snapshot, e, t): # and not delayed(state_snapshot, e, t): # TODO: add this once delayed is implemented
+            print("\t - performing execute")
+            state = perform(state, e, t)
+            if e.name == M_Event_Name.EXECUTE_BRANCH_FAIL and e.rob_index == i:
+                break
+
+    print(state)
+
+    print("\n\t[untaint]\n")
+    state = untaint(state)
+
+    print(state)
+
+    halt: bool = P[state.pc] is None and state.rob.head == len(state.rob.seq) # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
+
+    return tuple([state, halt])
