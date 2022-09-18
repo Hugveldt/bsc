@@ -49,7 +49,8 @@ example_program: Program = [
     Instruction(Instruction_Name.IMMED, [4,64]),
     Instruction(Instruction_Name.IMMED, [5,65]),
     Instruction(Instruction_Name.IMMED, [6,66]),
-    Instruction(Instruction_Name.IMMED, [7,67])
+    Instruction(Instruction_Name.IMMED, [7,67]),
+    None
 ]
 
 def immed(state: State_InO, r_d: int, k: int):
@@ -73,8 +74,7 @@ def store(state: State_InO, r_a: int, r_v: int):
     state.mem[state.reg[r_a]] = state.reg[r_v]
 
 def InO_Logic(P: Program, state: State_InO, t: int) -> Tuple[State_InO, bool]:
-    # TODO: Check if this bounds check is necessary/correct
-    if state.pc >= len(P) or P[state.pc] == None:
+    if P[state.pc] == None:
         return (state, True)
     
     # These 2 lines depends on how 'P' is typed.
