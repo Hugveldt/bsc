@@ -1,4 +1,5 @@
 from __future__ import annotations
+from calendar import c
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, TypeAlias
@@ -20,7 +21,7 @@ class Instruction:
         self.operands = operands
 
     def __str__(self):
-        return f'Instruction(\n\tname: {self.name}\n\toperands: {self.operands}\n)'
+        return f'{self.name.name} {self.operands}'
 
 # abstract branch predictor
 # TODO: decide on how to model branch prediction. Random would be easiest and shouldn't cause any problems.
@@ -89,7 +90,13 @@ class State_STT:
         s += f'\n\tregisters: {self.reg}'
         s += f'\n\tready: {self.ready}'
         s += f'\n\trenaming table: {self.rt}'
-        s += f'\n\treorder buffer (head: {self.rob.head}): {self.rob.seq}'
+
+        rob_seq_s = '['
+        for pc, instruction, branch_pred in self.rob.seq:
+            rob_seq_s += f'\n\t\t({pc},\t{str(instruction)},\t{str(branch_pred)}), '
+        rob_seq_s += '\n\t]'
+
+        s += f'\n\treorder buffer (head: {self.rob.head}): {rob_seq_s}'
         s += f'\n\tload queue: {self.lq}'
         s += f'\n\tstore queue: {self.sq}'
         s += f'\n\tbranch predictor: N/A'
@@ -214,7 +221,7 @@ def taint(state: State_STT, static_instruction: Instruction) -> Dict:
             x_a: int = dynamic_instruction.operands[1]
             x_b: int = dynamic_instruction.operands[2]
 
-            new_taint[x_d] = tainted[x_a] or tainted[x_b]
+            new_taint[x_d] = (x_a in tainted and tainted[x_a]) or (x_b in tainted and tainted[x_b])
             
             return new_taint
         
@@ -461,7 +468,7 @@ def loadResult(state: State_STT, rob_i: int, x_a: int, oldRes: int) -> int:
 # TODO: decide how to implement (STT formal pg. 8)
 # "for a given sequence of memory addresses already accessed and the next address to access returns the number of cycles it takes to load the value by that address"
 def LoadLat(cache: List[int], target_address: int) -> int:
-    return 0
+    return 1
 
 
 ####
@@ -537,7 +544,7 @@ def execute_branch_success(state: State_STT, rob_index: int) -> State_STT:
     new_bp = new_state.bp.second_update(origin_pc, state.reg[x_c], state.reg[x_d])
     new_state.bp = new_bp
 
-    new_state.ckpt = [ checkpoint for checkpoint in state.ckpt if checkpoint[0] is not rob_index ] #  "ckpt | != i"
+    new_state.ckpt = [ checkpoint for checkpoint in state.ckpt if checkpoint[0] != rob_index ] #  "ckpt | != i"
 
     return new_state
 
@@ -636,15 +643,23 @@ def execute_load_begin_get_s(state: State_STT, rob_index: int, t: int) -> State_
     lq_entry = None
     lq_index = None
     for i, entry in enumerate(state.lq):
+        print(i)
+        print(entry)
         if entry[0] == rob_index:
             assert(entry[2] is None) # might be unnecessary
             lq_entry = deepcopy(entry)
             lq_index = i
             break
 
-    assert(lq_entry is not None and lq_index is not None)
+    # TODO: Make sure this is correct (event spec seems to suggest that the entry should *already* exist and is merely modified by the event)
+    if lq_entry is None:
+        lq_entry = tuple([rob_index, False, None])
+    new_state.lq.append(lq_entry)
+    lq_index = len(new_state.lq) - 1
 
+    lq_entry = list(lq_entry)
     lq_entry[2] = t_end # (i, False, ⊥) -> (i, False, t_end)
+    lq_entry = tuple(lq_entry)
     new_state.lq[lq_index] = lq_entry
 
     new_state.C.append(state.reg[x_a])
@@ -688,7 +703,9 @@ def execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> State_ST
 
     new_state.reg[x_d] = state.mem[state.reg[x_a]]
 
+    lq_entry = list(lq_entry)
     lq_entry[1] = True # (i, False, t_end) -> (i, True, t_end)
+    lq_entry = tuple(lq_entry)
     new_state.lq[lq_index] = lq_entry
 
     return new_state
@@ -735,6 +752,7 @@ def enabled_execute_load_complete(state: State_STT, rob_index: int) -> bool:
         if entry[0] == rob_index and entry[1] is True: # (i, True, _) ∈ lq
             lq_entry = entry
             break
+
 
     return lq_entry is not None
 
@@ -802,7 +820,7 @@ def commit_load(state: State_STT) -> State_STT:
 
     new_state.rob.head += 1
 
-    new_state.lq = [ entry for entry in state.lq if entry[0] is not state.rob.head ]
+    new_state.lq = [ entry for entry in state.lq if entry[0] != state.rob.head ]
 
     return new_state
 
@@ -830,7 +848,9 @@ def commit_store(state: State_STT) -> State_STT:
 
     new_state.rob.head += 1
 
-    new_state.sq = [ entry for entry in state.sq if entry[0] is not state.rob.head ]
+    new_state.sq = [ entry for entry in state.sq if entry != state.rob.head ]
+
+    new_state.C.append(state.reg[x_a])
 
     return new_state
 
@@ -931,6 +951,9 @@ def perform(state: State_STT, event: M_Event, t: int) -> State_STT:
 
         case M_Event_Name.COMMIT_STORE:
             return commit_store(state)
+        
+        case _:
+            return state
             
 def enabled(state: State_STT, event: M_Event, t: int) -> bool:
     match event.name:
@@ -1010,17 +1033,23 @@ def execute_event(state: State_STT, rob_index: int) -> M_Event:
                 raise Exception("Neither of the execute events, branch success or branch failure, were enabled...")
                 
         case Instruction_Name.LOAD:
-            if enabled_execute_load_complete(state, rob_index):
+            already_ended: bool = enabled_execute_load_complete(state, rob_index)
+            already_begun: bool = False
+
+            for i, ready, t_end in state.lq:
+                if i == rob_index and not ready and t_end is not None:
+                    already_begun = True
+                    break
+
+            if already_ended:
                 event_name = M_Event_Name.EXECUTE_LOAD_COMPLETE
-            elif enabled_execute_load_end_get_s(state, rob_index):
+            elif already_begun:
                 event_name = M_Event_Name.EXECUTE_LOAD_END_GET_S
-            elif enabled_execute_load_begin_get_s(state, rob_index):
-                event_name = M_Event_Name.EXECUTE_LOAD_BEGIN_GET_S
             else:
-                raise Exception("None of the execute load events were enabled...")
+                event_name = M_Event_Name.EXECUTE_LOAD_BEGIN_GET_S
 
         case Instruction_Name.STORE:
-            raise Exception("The processor tried to execute a store instruction (Should only be able to fetch or commit)")
+            event_name = None
             
 
     return M_Event(name=event_name, rob_index=rob_index, instruction=None)
@@ -1048,6 +1077,10 @@ def commit_event(instruction: Instruction) -> M_Event:
 # -> non ready conditions like: storesAreReady(i), t >= t_end etc.
 def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
     match execute_event.name:
+        case None:
+            # name is set to none when the instruction for 'execution' is a store
+            return True
+
         case M_Event_Name.EXECUTE_IMMEDIATE:
             return True
 
@@ -1064,26 +1097,36 @@ def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
             return operands_ready[1] and operands_ready[2]
 
         case M_Event_Name.EXECUTE_BRANCH_SUCCESS:
+            _, dynamic_instruction, _ = state.rob.seq[execute_event.rob_index]
+            operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
+
             return operands_ready[0] and operands_ready[1]
 
         case M_Event_Name.EXECUTE_BRANCH_FAIL:
+            _, dynamic_instruction, _ = state.rob.seq[execute_event.rob_index]
+            operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
+
             return operands_ready[0] and operands_ready[1]
 
         case M_Event_Name.EXECUTE_LOAD_BEGIN_GET_S:
+            _, dynamic_instruction, _ = state.rob.seq[execute_event.rob_index]
+            operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
+
             return operands_ready[1]
 
 
 Program: TypeAlias = List[Instruction]
 
 example_program: Program = [
-    Instruction(Instruction_Name.IMMED, [0,60]),
-    Instruction(Instruction_Name.IMMED, [1,61]),
-    Instruction(Instruction_Name.IMMED, [2,62]),
-    Instruction(Instruction_Name.IMMED, [3,63]),
-    Instruction(Instruction_Name.IMMED, [4,64]),
-    Instruction(Instruction_Name.IMMED, [5,65]),
-    Instruction(Instruction_Name.IMMED, [6,66]),
-    Instruction(Instruction_Name.IMMED, [7,67]),
+    Instruction(Instruction_Name.IMMED, [0, 10  ]),
+    Instruction(Instruction_Name.IMMED, [1, 61  ]),
+    Instruction(Instruction_Name.STORE, [0, 1   ]),
+    Instruction(Instruction_Name.IMMED, [2, 15  ]),
+    Instruction(Instruction_Name.LOAD,  [3, 0   ]),
+    Instruction(Instruction_Name.LOAD,  [3, 0   ]),
+    Instruction(Instruction_Name.LOAD,  [3, 0   ]),
+    Instruction(Instruction_Name.OP,    [0, 2, 3]),
+    Instruction(Instruction_Name.STORE, [1, 0   ]),
     None
 ]
 
@@ -1105,47 +1148,56 @@ def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
 
     print(f"STT_Logic for timestep {t}")
 
+    print('\n')
     print(state)
 
     print("\n\t[commit]\n")
     for i in range(0, COMMIT_WIDTH):
         if not state.rob.seq:
             break
-        e: M_Event = commit_event(state.rob.seq[state.rob.head][1])
+        instruction: Instruction = state.rob.seq[state.rob.head][1]
+        e: M_Event = commit_event(instruction)
         if enabled(state, e, t):
-            print("\t - performing commit")
+            print("\t - committing " + str(instruction.name.name) + "" + str(instruction.operands))
             state = perform(state, e, t)
         else:
             break
 
+    print('\n')
     print(state)
 
     print("\n\t[fetch]\n")
-    if P[state.pc] is not None:
-        for i in range(0, FETCH_WIDTH):
-            e: M_Event = fetch_event(P[state.pc])
-            state.T = taint(state, P[state.pc])
-            print("\t - performing fetch")
-            state = perform(state, e, t)
-            if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
-                break
+    for i in range(0, FETCH_WIDTH):
+        if P[state.pc] is None:
+            break # don't try and fetch beyond the end of the file
+        instruction: Instruction = P[state.pc]
+        e: M_Event = fetch_event(instruction)
+        state.T = taint(state, instruction)
+        print("\t - fetching the " + str(instruction.name.name) + " on line " + str(state.pc))
+        state = perform(state, e, t)
+        if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
+            break
 
+    print('\n')
     print(state)
     
     print("\n\t[execute]\n")
     for i in range(state.rob.head, len(state_snapshot.rob.seq)): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
+        instruction: Instruction = state.rob.seq[i][1]
         e: M_Event = execute_event(state, i)
         if enabled(state, e, t) and ready(state_snapshot, e, t): # and not delayed(state_snapshot, e, t): # TODO: add this once delayed is implemented
-            print("\t - performing execute")
+            print("\t - executing " + str(instruction.name.name) + " " + str(instruction.operands))
             state = perform(state, e, t)
             if e.name == M_Event_Name.EXECUTE_BRANCH_FAIL and e.rob_index == i:
                 break
 
+    print('\n')
     print(state)
 
     print("\n\t[untaint]\n")
     state = untaint(state)
 
+    print('\n')
     print(state)
 
     halt: bool = P[state.pc] is None and state.rob.head == len(state.rob.seq) # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
