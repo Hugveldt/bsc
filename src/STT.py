@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, TypeAlias
 from enum import Enum, auto
 from copy import deepcopy
+import random
 
 class Instruction_Name(Enum):
     IMMED   = auto()
@@ -24,25 +25,37 @@ class Instruction:
         return f'{self.name.name} {self.operands}'
 
 # abstract branch predictor
-# TODO: decide on how to model branch prediction. Random would be easiest and shouldn't cause any problems.
 class BrPr:
-    def __init__(self):
-        pass
+    def __init__(self, correct_predictions: Dict, program_length: int):
+        self.correct_predictions: Dict = correct_predictions
+        self.program_length: int = program_length
 
     def first_update(self, b: bool) -> BrPr:
-        # TODO: define (STT formal pg. 7)
         # "The history register (global or local) is updated with the predicted direction b."
-        return
+        # NOTE: currently does nothing but exists to match spec of STT paper
+        return self
     
     def second_update(self, pc: int, cond: bool, target: int) -> BrPr:
-        # TODO: define (STT formal pg. 7)
         # "predictor is updated with both correct direction cond and correct target address target"
-        return
+        
+        new_bp = deepcopy(self)
+
+        new_bp.correct_predictions[pc] = tuple([target, cond])
+
+        return new_bp
     
     def predict(self, pc_br: int) -> Tuple[int, bool]:
-        # TODO: define (STT formal pg. 7)
         # "bp.predict(pc_br) = (spc, b), for a given program counter pc_br , the function returns spc, which is the predicted target address, and b, which is a boolean value indicating whether the branch is predicted taken or not"
-        return
+
+        if pc_br in self.correct_predictions:
+            return self.correct_predictions[pc_br]
+        else:
+            print("\n\t[DEBUG] giving random prediction...\n")
+
+            spc: int = random.randint(0, self.program_length - 1)
+            b: bool = random.choice([True, False])
+
+            return tuple([spc, b])
 
 @dataclass
 class ReorderBuffer:
@@ -99,7 +112,12 @@ class State_STT:
         s += f'\n\treorder buffer (head: {self.rob.head}): {rob_seq_s}'
         s += f'\n\tload queue: {self.lq}'
         s += f'\n\tstore queue: {self.sq}'
-        s += f'\n\tbranch predictor: N/A'
+
+        corr_preds_s = ''
+        for pc_br, pred in self.bp.correct_predictions.items():
+            corr_preds_s += f'\t{pc_br} : {bool(pred[1])} -> {pred[0]}'
+
+        s += f'\n\tbranch predictor:\n{corr_preds_s}'
         s += f'\n\tbranch checkpoints: {self.ckpt}'
         s += f'\n\tcache: {self.C}'
         s += f'\n\ttaint: {self.T}'
@@ -549,6 +567,7 @@ def execute_branch_success(state: State_STT, rob_index: int) -> State_STT:
     return new_state
 
 def enabled_execute_branch_success(state: State_STT, rob_index: int) -> bool:
+    print("\n[DEBUG] checking if branch SUCCESS is enabled...")
     _, dynamic_instruction, branch_prediction = state.rob.seq[rob_index]
     spc, b = branch_prediction
 
@@ -556,12 +575,16 @@ def enabled_execute_branch_success(state: State_STT, rob_index: int) -> bool:
     x_d: int = dynamic_instruction.operands[1]
 
     if x_c not in state.ready or state.ready[x_c] is False:
+        print("\t[DEBUG] check reg not ready")
         return False
     if x_d not in state.ready or state.ready[x_d] is False:
+        print("\t[DEBUG] destination reg not ready")
         return False
     if b != state.reg[x_c]:
+        print("\t[DEBUG] incorrect direction predicted")
         return False
     if spc != state.reg[x_d]:
+        print("\t[DEBUG] incorrect target address predicted")
         return False
 
     return True
@@ -582,7 +605,7 @@ def execute_branch_fail(state: State_STT, rob_index: int) -> State_STT:
     rollback_ckpt: Tuple[int, int, Dict] = None
 
     for checkpoint in state.ckpt:
-        if checkpoint[0] is rob_index and checkpoint[1] is origin_pc:
+        if checkpoint[0] == rob_index and checkpoint[1] == origin_pc:
             rollback_ckpt = checkpoint
             break
     
@@ -597,8 +620,11 @@ def execute_branch_fail(state: State_STT, rob_index: int) -> State_STT:
     new_lq = [ queued_load for queued_load in state.lq if queued_load[0] < rob_index ]
     new_state.lq = new_lq
 
-    new_sq = [ queued_store for queued_store in state.sq if queued_store[0] < rob_index ]
+    new_sq = [ queued_store for queued_store in state.sq if queued_store < rob_index ]
     new_state.sq = new_sq
+
+    new_bp = new_state.bp.second_update(origin_pc, state.reg[x_c], state.reg[x_d])
+    new_state.bp = new_bp
 
     new_ckpt = [ checkpoint for checkpoint in state.ckpt if checkpoint[0] < rob_index ]
     new_state.ckpt = new_ckpt
@@ -606,6 +632,7 @@ def execute_branch_fail(state: State_STT, rob_index: int) -> State_STT:
     return new_state
 
 def enabled_execute_branch_fail(state: State_STT, rob_index: int) -> bool:
+    print("\n[DEBUG] checking if branch FAIL is enabled...")
     origin_pc, dynamic_instruction, branch_prediction = state.rob.seq[rob_index]
     spc, b = branch_prediction
 
@@ -613,18 +640,22 @@ def enabled_execute_branch_fail(state: State_STT, rob_index: int) -> bool:
     x_d: int = dynamic_instruction.operands[1]
 
     if x_c not in state.ready or state.ready[x_c] is False:
+        print("\t[DEBUG] check register not ready")
         return False
     if x_d not in state.ready or state.ready[x_d] is False:
+        print("\t[DEBUG] destination register not ready")
         return False
     if b == state.reg[x_c] and spc == state.reg[x_d]:
+        print("\t[DEBUG] prediction was correct - should be executing branch success not failure")
         return False
 
     rollback_ckpt: Tuple[int, int, Dict] = None
     for checkpoint in state.ckpt:
-        if checkpoint[0] is rob_index and checkpoint[1] is origin_pc:
+        if checkpoint[0] == rob_index and checkpoint[1] == origin_pc:
             rollback_ckpt = checkpoint
             break
     if rollback_ckpt is None:
+        print("\t[DEBUG] no rollback checkpoint found")
         return False
     
     return True
@@ -1118,19 +1149,19 @@ def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
 Program: TypeAlias = List[Instruction]
 
 example_program: Program = [
-    Instruction(Instruction_Name.IMMED, [0, 10  ]),
-    Instruction(Instruction_Name.IMMED, [1, 61  ]),
-    Instruction(Instruction_Name.STORE, [0, 1   ]),
-    Instruction(Instruction_Name.IMMED, [2, 15  ]),
-    Instruction(Instruction_Name.LOAD,  [3, 0   ]),
-    Instruction(Instruction_Name.LOAD,  [3, 0   ]),
-    Instruction(Instruction_Name.LOAD,  [3, 0   ]),
-    Instruction(Instruction_Name.OP,    [0, 2, 3]),
-    Instruction(Instruction_Name.STORE, [1, 0   ]),
+    Instruction(Instruction_Name.IMMED, [0, 8]),
+    Instruction(Instruction_Name.IMMED, [1, 10]),
+    Instruction(Instruction_Name.IMMED, [2, 1]),
+    Instruction(Instruction_Name.IMMED, [3, 5]),
+    Instruction(Instruction_Name.STORE, [3, 1]),
+    Instruction(Instruction_Name.BRANCH, [2, 0]),
+    Instruction(Instruction_Name.IMMED, [1, 20]),
+    Instruction(Instruction_Name.STORE, [3, 1]),
+    Instruction(Instruction_Name.LOAD, [2, 3]),
     None
 ]
 
-state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],{},0)
+state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(correct_predictions={}, program_length=len(example_program)-1),[],[],{},0)
 def STT_Processor(P: Program) -> None:
     state = state_init
     t = 0
@@ -1153,7 +1184,7 @@ def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
 
     print("\n\t[commit]\n")
     for i in range(0, COMMIT_WIDTH):
-        if not state.rob.seq:
+        if state.rob.head == len(state.rob.seq):
             break
         instruction: Instruction = state.rob.seq[state.rob.head][1]
         e: M_Event = commit_event(instruction)
