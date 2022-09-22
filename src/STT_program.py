@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 from typing import List, TypeAlias
 import random
@@ -31,7 +32,7 @@ def random_program(min_length: int) -> Program:
         match name:
             case Instruction_Name.IMMED:
                 r_d, _, registers = random_register(registers)
-                k = random.randint(-1000, 1000)
+                k = random.randint(0, max(len(program), min_length))
 
                 operands = [r_d, k]
 
@@ -67,17 +68,20 @@ def random_program(min_length: int) -> Program:
                 operands = [r_c, r_d]
 
             case Instruction_Name.LOAD:
-                # TODO: need to make sure there is an accompanying store beforehand. Check if one exists otherwise create one?
-
                 r_d, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
                     program.append(Instruction(Instruction_Name.IMMED, [r_d, k]))
-                    
+
                 r_a, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
                     program.append(Instruction(Instruction_Name.IMMED, [r_a, k]))
+
+                # For now this just creates matching stores immediately before every load
+                r_v, reg_is_new, registers = random_register(registers=registers, only_reuse=True)
+                assert(not reg_is_new)
+                program.append(Instruction(Instruction_Name.STORE, [r_a, r_v]))
 
                 operands = [r_d, r_a]
             
@@ -100,11 +104,13 @@ def random_program(min_length: int) -> Program:
 
     return program
 
-def random_register(registers: List[int]) -> tuple[int, bool, List[int]]:
-    reg: int = random.randint(0, len(registers))
+def random_register(registers: List[int], only_reuse: bool = False) -> tuple[int, bool, List[int]]:
+    possible_registers: int = len(registers) - int(only_reuse)
+
+    reg: int = random.randint(0, possible_registers)
     
     is_new: bool = False
-    if reg == len(registers):
+    if not only_reuse and reg == len(registers):
         registers.append(reg)
         is_new = True
 
@@ -115,3 +121,21 @@ def print_program(program: Program) -> None:
         if instruction is None:
             return
         print(f"[{i}]\t{instruction.name.name}\t{instruction.operands}")
+
+
+loop: Program = [
+    Instruction(Instruction_Name.IMMED,  [0, 10]),
+    Instruction(Instruction_Name.IMMED,  [1, -1]),
+    Instruction(Instruction_Name.IMMED,  [2, 999]),
+    Instruction(Instruction_Name.IMMED,  [4, 7]),
+    Instruction(Instruction_Name.IMMED,  [5, 9]),
+    Instruction(Instruction_Name.IMMED,  [6, 12]),
+    Instruction(Instruction_Name.IMMED,  [7, 1]),
+    Instruction(Instruction_Name.BRANCH, [0, 5]),
+    Instruction(Instruction_Name.BRANCH, [7,  6]),
+    Instruction(Instruction_Name.STORE,  [0, 2]),
+    Instruction(Instruction_Name.OP,     [0, 0, 1]),
+    Instruction(Instruction_Name.BRANCH, [7,  4]),
+    None
+]
+
