@@ -1,5 +1,6 @@
-from typing import Dict, List, Tuple, TypeAlias
-from enum import Enum, auto
+from copy import deepcopy
+from typing import Dict, List, Tuple
+from STT_program import Instruction_Name, Program, Instruction
 
 class State_InO:
     def __init__(self, pc: int, mem: Dict, reg: Dict):
@@ -10,49 +11,23 @@ class State_InO:
     def __str__(self):
         return f'State_InO(\n\tpc: {self.pc}\n\tmem: {self.mem}\n\treg: {self.reg}\n)'
 
-class Instruction_Name(Enum):
-    IMMED   = auto()
-    OP      = auto()
-    BRANCH  = auto()
-    LOAD    = auto()
-    STORE   = auto()
-
-class Instruction:
-    def __init__(self, name: Instruction_Name, operands: List[int]):
-        self.name = name
-        self.operands = operands
-
-    def perform(self, state, t) -> State_InO:
-        # TODO: Change this to be pass by value somehow so that the previous state isn't changed
-        # deepcopy() ??
-        match self.name:
-            case Instruction_Name.IMMED:
-                immed(state, self.operands[0], self.operands[1])
-            case Instruction_Name.OP:
-                op(state, self.operands[0], self.operands[1], self.operands[2])
-            case Instruction_Name.BRANCH:
-                branch(state, self.operands[0], self.operands[1])
-            case Instruction_Name.LOAD:
-                load(state, self.operands[0], self.operands[1])
-            case Instruction_Name.STORE:
-                store(state, self.operands[0], self.operands[1])
-
-        return state
-
-Program: TypeAlias = List[Instruction]
-
 example_program: Program = [
-    Instruction(Instruction_Name.IMMED, [0,60]),
-    Instruction(Instruction_Name.IMMED, [1,61]),
-    Instruction(Instruction_Name.IMMED, [2,62]),
-    Instruction(Instruction_Name.IMMED, [3,63]),
-    Instruction(Instruction_Name.IMMED, [4,64]),
-    Instruction(Instruction_Name.IMMED, [5,65]),
-    Instruction(Instruction_Name.IMMED, [6,66]),
-    Instruction(Instruction_Name.IMMED, [7,67]),
+    Instruction(Instruction_Name.IMMED,  [0, 10]),
+    Instruction(Instruction_Name.IMMED,  [1, -1]),
+    Instruction(Instruction_Name.IMMED,  [2, 999]),
+    Instruction(Instruction_Name.IMMED,  [4, 7]),
+    Instruction(Instruction_Name.IMMED,  [5, 9]),
+    Instruction(Instruction_Name.IMMED,  [6, 12]),
+    Instruction(Instruction_Name.IMMED,  [7, 1]),
+    Instruction(Instruction_Name.BRANCH, [0, 5]),
+    Instruction(Instruction_Name.BRANCH, [7,  6]),
+    Instruction(Instruction_Name.STORE,  [0, 2]),
+    Instruction(Instruction_Name.OP,     [0, 0, 1]),
+    Instruction(Instruction_Name.BRANCH, [7,  4]),
     None
 ]
 
+# TODO: refactor these operations to the same format as in STT (deepcopy state and then return new state)
 def immed(state: State_InO, r_d: int, k: int):
     state.pc += 1
     state.reg[r_d] = k
@@ -73,17 +48,33 @@ def store(state: State_InO, r_a: int, r_v: int):
     state.pc += 1
     state.mem[state.reg[r_a]] = state.reg[r_v]
 
+def matching_event(instruction: Instruction) -> Instruction:
+    return instruction
+
+def perform(state: State_InO, e: Instruction, t: int) -> State_InO:
+    new_state: State_InO = deepcopy(state)
+
+    match e.name:
+        case Instruction_Name.IMMED:
+            immed(new_state, e.operands[0], e.operands[1])
+        case Instruction_Name.OP:
+            op(new_state, e.operands[0], e.operands[1], e.operands[2])
+        case Instruction_Name.BRANCH:
+            branch(new_state, e.operands[0], e.operands[1])
+        case Instruction_Name.LOAD:
+            load(new_state, e.operands[0], e.operands[1])
+        case Instruction_Name.STORE:
+            store(new_state, e.operands[0], e.operands[1])
+
+    return new_state
+
 def InO_Logic(P: Program, state: State_InO, t: int) -> Tuple[State_InO, bool]:
     if P[state.pc] == None:
         return (state, True)
-    
-    # These 2 lines depends on how 'P' is typed.
-    # STT paper definition:
-    #   e <- matching_event(P[state.pc])
-    #   state' <- perform(state, e, t)
-    #   return (state', false)
-    state = P[state.pc].perform(state, t)
-    return (state, False)
+
+    e = matching_event(P[state.pc])
+    new_state = perform(state, e, t)
+    return (new_state, False)
 
 state_init = State_InO(0, {}, {})
 def InO_Processor(P: Program):
