@@ -10,9 +10,8 @@ import random
 
 # abstract branch predictor
 class BrPr:
-    def __init__(self, correct_predictions: Dict, program_length: int):
-        self.correct_predictions: Dict = correct_predictions
-        self.program_length: int = program_length
+    def __init__(self):
+        pass
 
     def first_update(self, b: bool) -> BrPr:
         # "The history register (global or local) is updated with the predicted direction b."
@@ -21,25 +20,12 @@ class BrPr:
     
     def second_update(self, pc: int, cond: bool, target: int) -> BrPr:
         # "predictor is updated with both correct direction cond and correct target address target"
-        
-        new_bp = deepcopy(self)
-
-        new_bp.correct_predictions[pc] = tuple([target, cond])
-
-        return new_bp
+        return self
     
     def predict(self, pc_br: int) -> Tuple[int, bool]:
         # "bp.predict(pc_br) = (spc, b), for a given program counter pc_br , the function returns spc, which is the predicted target address, and b, which is a boolean value indicating whether the branch is predicted taken or not"
-
-        if pc_br in self.correct_predictions:
-            use_prev_prediction: bool = random.randint(1, 10) < 10
-            if use_prev_prediction:
-                return self.correct_predictions[pc_br]
-            else:
-                del self.correct_predictions[pc_br]
-       
-        spc: int = random.randint(0, self.program_length - 1)
-        b: bool = random.choice([True, False])
+        spc: int = pc_br + 1
+        b: bool = False
 
         return tuple([spc, b])
 
@@ -99,9 +85,9 @@ class State_STT:
         s += f'\n\tload queue: {self.lq}'
         s += f'\n\tstore queue: {self.sq}'
 
-        corr_preds_s = ''
-        for pc_br, pred in self.bp.correct_predictions.items():
-            corr_preds_s += f'\t{pc_br} : {bool(pred[1])} -> {pred[0]}'
+        corr_preds_s = 'N/A'
+        #for pc_br, pred in self.bp.correct_predictions.items():
+        #    corr_preds_s += f'\t{pc_br} : {bool(pred[1])} -> {pred[0]}'
 
         s += f'\n\tbranch predictor:\n{corr_preds_s}'
         s += f'\n\tbranch checkpoints: {self.ckpt}'
@@ -314,7 +300,7 @@ def untaint(state: State_STT) -> State_STT:
 def fetch_immediate(state: State_STT, static_instruction: Instruction) -> State_STT:
     new_state = deepcopy(state)
 
-    new_rt, dynamic_instruction = rename(state, static_instruction)
+    new_rt, dynamic_instruction = rename(new_state, static_instruction)
 
     r_d: int = static_instruction.operands[0]
     x_d:int = new_rt[r_d]
@@ -333,7 +319,7 @@ def fetch_immediate(state: State_STT, static_instruction: Instruction) -> State_
 def fetch_arithmetic(state: State_STT, static_instruction: Instruction):
     new_state = deepcopy(state)
 
-    new_rt, dynamic_instruction = rename(state, static_instruction)
+    new_rt, dynamic_instruction = rename(new_state, static_instruction)
 
     r_d: int = static_instruction.operands[0]
     x_d:int = new_rt[r_d]
@@ -352,7 +338,7 @@ def fetch_arithmetic(state: State_STT, static_instruction: Instruction):
 def fetch_branch(state: State_STT, static_instruction: Instruction):
     new_state = deepcopy(state)
 
-    new_rt, dynamic_instruction = rename(state, static_instruction)
+    new_rt, dynamic_instruction = rename(new_state, static_instruction)
 
     spc, b = state.bp.predict(state.pc)
 
@@ -379,7 +365,7 @@ def fetch_branch(state: State_STT, static_instruction: Instruction):
 def fetch_load(state: State_STT, static_instruction: Instruction):
     new_state = deepcopy(state)
 
-    new_rt, dynamic_instruction = rename(state, static_instruction)
+    new_rt, dynamic_instruction = rename(new_state, static_instruction)
 
     r_d: int = static_instruction.operands[0]
     x_d:int = new_rt[r_d]
@@ -398,7 +384,7 @@ def fetch_load(state: State_STT, static_instruction: Instruction):
 def fetch_store(state: State_STT, static_instruction: Instruction):
     new_state = deepcopy(state)
 
-    new_rt, dynamic_instruction = rename(state, static_instruction)
+    new_rt, dynamic_instruction = rename(new_state, static_instruction)
 
     new_state.pc = state.pc + 1
 
@@ -1130,7 +1116,7 @@ def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
 
 example_program: Program = STT_program.loop
 
-state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(correct_predictions={}, program_length=len(example_program)-1),[],[],{},0)
+state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],{},0)
 def STT_Processor(P: Program) -> None:
     state = state_init
 
@@ -1155,19 +1141,19 @@ FETCH_WIDTH: int = 2
 def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
     state_snapshot: State_STT = deepcopy(state)
 
-    #print(f"STT_Logic for timestep {t}")
+    print(f"STT_Logic for timestep {t}")
 
-    #print('\n')
-    #print(state)
+    print('\n')
+    print(state)
 
-    #print("\n\t[commit]\n")
+    print("\n\t[commit]\n")
     for i in range(0, COMMIT_WIDTH):
         if state.rob.head == len(state.rob.seq):
             break
         instruction: Instruction = state.rob.seq[state.rob.head][1]
         e: M_Event = commit_event(instruction)
         if enabled(state, e, t):
-            #print("\t - committing " + str(instruction.name.name) + "" + str(instruction.operands))
+            print("\t - committing " + str(instruction.name.name) + "" + str(instruction.operands))
             state = perform(state, e, t)
         else:
             break
@@ -1175,14 +1161,14 @@ def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
     #print('\n')
     #print(state)
 
-    #print("\n\t[fetch]\n")
+    print("\n\t[fetch]\n")
     for i in range(0, FETCH_WIDTH):
         if P[state.pc] is None:
             break # don't try and fetch beyond the end of the file
         instruction: Instruction = P[state.pc]
         e: M_Event = fetch_event(instruction)
         # state.T = taint(state, instruction)
-        #print("\t - fetching the " + str(instruction.name.name) + " on line " + str(state.pc))
+        print("\t - fetching the " + str(instruction.name.name) + " on line " + str(state.pc))
         state = perform(state, e, t)
         if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
             break
@@ -1190,12 +1176,12 @@ def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
     #print('\n')
     #print(state)
     
-    #print("\n\t[execute]\n")
+    print("\n\t[execute]\n")
     for i in range(state.rob.head, len(state_snapshot.rob.seq)): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
         instruction: Instruction = state.rob.seq[i][1]
         e: M_Event = execute_event(state, i)
         if enabled(state, e, t) and ready(state_snapshot, e, t): # and not delayed(state_snapshot, e, t): # TODO: add this once delayed is implemented
-            #print("\t - executing " + str(instruction.name.name) + " " + str(instruction.operands))
+            print("\t - executing " + str(instruction.name.name) + " " + str(instruction.operands))
             state = perform(state, e, t)
             if e.name == M_Event_Name.EXECUTE_BRANCH_FAIL:
                 break
@@ -1206,8 +1192,8 @@ def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
     # print("\n\t[untaint]\n")
     # state = untaint(state)
 
-    #print('\n')
-    #print(state)
+    print('\n')
+    print(state)
 
     halt: bool = P[state.pc] is None and state.rob.head == len(state.rob.seq) # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
 

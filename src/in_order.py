@@ -27,7 +27,7 @@ example_program: Program = [
     None
 ]
 
-# TODO: refactor these operations to the same format as in STT (deepcopy state and then return new state)
+# TODO: refactor these operations to the same format as in STT (deepcopy state and then return new state) -> State_InO:
 def immed(state: State_InO, r_d: int, k: int):
     state.pc += 1
     state.reg[r_d] = k
