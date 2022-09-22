@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple, TypeAlias
 from enum import Enum, auto
 from copy import deepcopy
 from STT_program import Instruction_Name, Instruction, Program, random_program, print_program
+import STT_program
 import random
 
 # abstract branch predictor
@@ -31,12 +32,16 @@ class BrPr:
         # "bp.predict(pc_br) = (spc, b), for a given program counter pc_br , the function returns spc, which is the predicted target address, and b, which is a boolean value indicating whether the branch is predicted taken or not"
 
         if pc_br in self.correct_predictions:
-            return self.correct_predictions[pc_br]
-        else:
-            spc: int = random.randint(0, self.program_length - 1)
-            b: bool = random.choice([True, False])
+            use_prev_prediction: bool = random.randint(1, 10) < 10
+            if use_prev_prediction:
+                return self.correct_predictions[pc_br]
+            else:
+                del self.correct_predictions[pc_br]
+       
+        spc: int = random.randint(0, self.program_length - 1)
+        b: bool = random.choice([True, False])
 
-            return tuple([spc, b])
+        return tuple([spc, b])
 
 @dataclass
 class ReorderBuffer:
@@ -554,13 +559,18 @@ def enabled_execute_branch_success(state: State_STT, rob_index: int) -> bool:
     x_c: int = dynamic_instruction.operands[0]
     x_d: int = dynamic_instruction.operands[1]
 
+    #print("branch success?")
     if x_c not in state.ready or state.ready[x_c] is False:
+        #print("\tNo: comp. reg not ready")
         return False
     if x_d not in state.ready or state.ready[x_d] is False:
+        #print("\tNo: dest. reg not ready")
         return False
     if b != state.reg[x_c]:
+        #print("\tNo: direction prediction incorrect")
         return False
     if spc != state.reg[x_d]:
+        #print("\tNo: target prediction incorrect")
         return False
 
     return True
@@ -614,11 +624,15 @@ def enabled_execute_branch_fail(state: State_STT, rob_index: int) -> bool:
     x_c: int = dynamic_instruction.operands[0]
     x_d: int = dynamic_instruction.operands[1]
 
+    #print("branch failure?")
     if x_c not in state.ready or state.ready[x_c] is False:
+        #print("\tNo: comp. reg not ready")
         return False
     if x_d not in state.ready or state.ready[x_d] is False:
+        #print("\tNo: dest. reg not ready")
         return False
     if b == state.reg[x_c] and spc == state.reg[x_d]:
+        #print("\tNo: branch prediction was correct (should be a success?)")
         return False
 
     rollback_ckpt: Tuple[int, int, Dict] = None
@@ -1029,10 +1043,8 @@ def execute_event(state: State_STT, rob_index: int) -> M_Event:
         case Instruction_Name.BRANCH:
             if enabled_execute_branch_success(state, rob_index):
                 event_name = M_Event_Name.EXECUTE_BRANCH_SUCCESS
-            elif enabled_execute_branch_fail(state, rob_index):
-                event_name = M_Event_Name.EXECUTE_BRANCH_FAIL
             else:
-                raise Exception("Neither of the execute events, branch success or branch failure, were enabled...")
+                event_name = M_Event_Name.EXECUTE_BRANCH_FAIL
                 
         case Instruction_Name.LOAD:
             already_ended: bool = enabled_execute_load_complete(state, rob_index)
@@ -1116,11 +1128,16 @@ def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
 
             return operands_ready[1]
 
-example_program: Program = random_program(20)
+example_program: Program = STT_program.loop
 
 state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(correct_predictions={}, program_length=len(example_program)-1),[],[],{},0)
 def STT_Processor(P: Program) -> None:
     state = state_init
+
+    # DEBUG #
+    print("[Initial State]\n")
+    print(state)
+
     t = 0
     halt =  False
 
@@ -1128,65 +1145,69 @@ def STT_Processor(P: Program) -> None:
         state, halt = STT_Logic(P, state, t)
         t += 1
 
+    # DEBUG #
+    print(f"[End State] - timestep {t}\n")
+    print(state)
+
 COMMIT_WIDTH: int = 2
 FETCH_WIDTH: int = 2
 
 def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
     state_snapshot: State_STT = deepcopy(state)
 
-    print(f"STT_Logic for timestep {t}")
+    #print(f"STT_Logic for timestep {t}")
 
-    print('\n')
-    print(state)
+    #print('\n')
+    #print(state)
 
-    print("\n\t[commit]\n")
+    #print("\n\t[commit]\n")
     for i in range(0, COMMIT_WIDTH):
         if state.rob.head == len(state.rob.seq):
             break
         instruction: Instruction = state.rob.seq[state.rob.head][1]
         e: M_Event = commit_event(instruction)
         if enabled(state, e, t):
-            print("\t - committing " + str(instruction.name.name) + "" + str(instruction.operands))
+            #print("\t - committing " + str(instruction.name.name) + "" + str(instruction.operands))
             state = perform(state, e, t)
         else:
             break
 
-    print('\n')
-    print(state)
+    #print('\n')
+    #print(state)
 
-    print("\n\t[fetch]\n")
+    #print("\n\t[fetch]\n")
     for i in range(0, FETCH_WIDTH):
         if P[state.pc] is None:
             break # don't try and fetch beyond the end of the file
         instruction: Instruction = P[state.pc]
         e: M_Event = fetch_event(instruction)
-        state.T = taint(state, instruction)
-        print("\t - fetching the " + str(instruction.name.name) + " on line " + str(state.pc))
+        # state.T = taint(state, instruction)
+        #print("\t - fetching the " + str(instruction.name.name) + " on line " + str(state.pc))
         state = perform(state, e, t)
         if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
             break
 
-    print('\n')
-    print(state)
+    #print('\n')
+    #print(state)
     
-    print("\n\t[execute]\n")
+    #print("\n\t[execute]\n")
     for i in range(state.rob.head, len(state_snapshot.rob.seq)): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
         instruction: Instruction = state.rob.seq[i][1]
         e: M_Event = execute_event(state, i)
         if enabled(state, e, t) and ready(state_snapshot, e, t): # and not delayed(state_snapshot, e, t): # TODO: add this once delayed is implemented
-            print("\t - executing " + str(instruction.name.name) + " " + str(instruction.operands))
+            #print("\t - executing " + str(instruction.name.name) + " " + str(instruction.operands))
             state = perform(state, e, t)
-            if e.name == M_Event_Name.EXECUTE_BRANCH_FAIL and e.rob_index == i:
+            if e.name == M_Event_Name.EXECUTE_BRANCH_FAIL:
                 break
 
-    print('\n')
-    print(state)
+    #print('\n')
+    #print(state)
 
-    print("\n\t[untaint]\n")
-    state = untaint(state)
+    # print("\n\t[untaint]\n")
+    # state = untaint(state)
 
-    print('\n')
-    print(state)
+    #print('\n')
+    #print(state)
 
     halt: bool = P[state.pc] is None and state.rob.head == len(state.rob.seq) # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
 
