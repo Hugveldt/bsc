@@ -30,10 +30,13 @@ class BrPr:
 
         return tuple([spc, b])
 
-@dataclass
 class ReorderBuffer:
-    seq     : List[Tuple[int, Instruction, bool]]
-    head    : int
+    def __init__(self, seq: List[Tuple[int, Instruction, bool]], head: int):
+        self.seq = seq
+        self.head = head
+
+    def tail(self):
+        return len(self.seq)
 
 # TODO: change to dataclass like `ReorderBuffer`?
 class State_OutO:
@@ -221,7 +224,7 @@ def taint(state: State_OutO, static_instruction: Instruction) -> Dict:
 
             x_d: int = dynamic_instruction.operands[0]
 
-            new_taint[x_d] = underSpec(state.ckpt, len(state.rob.seq)) # underSpec(σ.ckpt, σ.rob_tail)
+            new_taint[x_d] = underSpec(state.ckpt, state.rob.tail()) # underSpec(σ.ckpt, σ.rob_tail)
 
             return new_taint
 
@@ -289,7 +292,7 @@ def untaintInstr(state: State_OutO, i: int) -> Dict:
 def untaint(state: State_OutO) -> State_OutO:
     new_state = deepcopy(state)
 
-    for i in range(state.rob.head, len(state.rob.seq)-1): # 'for i from σ.rob_head to σ.rob_tail − 1 do...'
+    for i in range(state.rob.head, state.rob.tail()-1): # 'for i from σ.rob_head to σ.rob_tail − 1 do...'
         new_state.T = untaintInstr(new_state, i)
     
     return new_state
@@ -347,7 +350,7 @@ def fetch_branch(state: State_OutO, static_instruction: Instruction):
 
     new_pc = spc if b else state.pc + 1
 
-    new_ckpt = tuple([len(state.rob.seq), state.pc, state.rt]) # "newCkpt = (rob_tail, pc, rt)"
+    new_ckpt = tuple([state.rob.tail(), state.pc, state.rt]) # "newCkpt = (rob_tail, pc, rt)"
 
     new_state.pc = new_pc
 
@@ -394,7 +397,7 @@ def fetch_store(state: State_OutO, static_instruction: Instruction):
     rob_entry = tuple([state.pc, dynamic_instruction, None])
     new_state.rob.seq.append(rob_entry)
 
-    new_state.sq.append(len(state.rob.seq)) #  "sq ++ [rob_tail]"
+    new_state.sq.append(state.rob.tail()) #  "sq ++ [rob_tail]"
 
     return new_state
 
@@ -1148,8 +1151,8 @@ def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]
     print(state)
 
     print("\n\t[commit]\n")
-    for i in range(0, COMMIT_WIDTH):
-        if state.rob.head == len(state.rob.seq):
+    for i in range(1, COMMIT_WIDTH):
+        if state.rob.head == state.rob.tail():
             break
         instruction: Instruction = state.rob.seq[state.rob.head][1]
         e: M_Event = commit_event(instruction)
@@ -1163,7 +1166,7 @@ def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]
     #print(state)
 
     print("\n\t[fetch]\n")
-    for i in range(0, FETCH_WIDTH):
+    for i in range(1, FETCH_WIDTH):
         if P[state.pc] is None:
             break # don't try and fetch beyond the end of the file
         instruction: Instruction = P[state.pc]
@@ -1178,7 +1181,7 @@ def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]
     #print(state)
     
     print("\n\t[execute]\n")
-    for i in range(state.rob.head, len(state_snapshot.rob.seq)): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
+    for i in range(state.rob.head, state_snapshot.rob.tail()): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
         instruction: Instruction = state.rob.seq[i][1]
         e: M_Event = execute_event(state, i)
         if enabled(state, e, t) and ready(state_snapshot, e, t): # and not delayed(state_snapshot, e, t): # TODO: add this once delayed is implemented
@@ -1196,6 +1199,6 @@ def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]
     print('\n')
     print(state)
 
-    halt: bool = P[state.pc] is None and state.rob.head == len(state.rob.seq) # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
+    halt: bool = P[state.pc] is None and state.rob.head == state.rob.tail() # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
 
     return tuple([state, halt])
