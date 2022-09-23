@@ -30,6 +30,18 @@ class BrPr:
 
         return tuple([spc, b])
 
+class RenamingTable:
+    def __init__(self, rt: Dict, YRoT: Dict, LL: Dict):
+        self.rt = rt
+        self.YRoT = YRoT
+        self.LL = LL
+
+    def __getitem__(self, item):
+        return self.rt[item]
+
+    def __setitem__(self, LRegID: int, PRegID: int):
+        self.rt[LRegID] = PRegID
+
 @dataclass
 class ReorderBuffer:
     seq     : List[Tuple[int, Instruction, bool]]
@@ -42,7 +54,7 @@ class State_STT:
                 mem: Dict,
                 reg: Dict,
                 ready: Dict,
-                rt: Dict,
+                rt: RenamingTable,
                 rob: ReorderBuffer,
                 lq: List[Tuple[int, bool, int]],
                 sq: List[int],
@@ -75,7 +87,7 @@ class State_STT:
         s += f'\n\tmemory: {self.mem}'
         s += f'\n\tregisters: {self.reg}'
         s += f'\n\tready: {self.ready}'
-        s += f'\n\trenaming table: {self.rt}'
+        s += f'\n\trenaming table:\n\t\trt: {self.rt.rt}\n\t\trt_YRoT: {self.rt.YRoT}\n\t\trt_LL: {self.rt.LL}'
 
         rob_seq_s = '['
         for pc, instruction, branch_pred in self.rob.seq:
@@ -1117,7 +1129,7 @@ def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
 
 example_program: Program = STT_program.loop
 
-state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],{},0)
+state_init = State_STT(0,{},{},{},RenamingTable({},{},{}),ReorderBuffer([],0),[],[],BrPr(),[],[],{},0)
 def STT_Processor(P: Program) -> None:
     state = state_init
 
