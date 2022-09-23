@@ -36,7 +36,7 @@ class ReorderBuffer:
     head    : int
 
 # TODO: change to dataclass like `ReorderBuffer`?
-class State_STT:
+class State_OutO:
     def __init__(self,
                 pc: int,
                 mem: Dict,
@@ -70,7 +70,7 @@ class State_STT:
         return
 
     def __str__(self):
-        s  = f'---- State_STT ------------'
+        s  = f'---- State_OutO ------------'
         s += f'\n\tprogram counter: {self.pc}'
         s += f'\n\tmemory: {self.mem}'
         s += f'\n\tregisters: {self.reg}'
@@ -101,7 +101,7 @@ class State_STT:
 
 
 # TODO: need to decide whether or not static and dynamic instructions should be different classes
-def rename(state: State_STT, static_instruction: Instruction) -> Tuple[Dict, Instruction]:
+def rename(state: State_OutO, static_instruction: Instruction) -> Tuple[Dict, Instruction]:
     match static_instruction.name:
         case Instruction_Name.IMMED:
             # deepcopy to avoid changing the original renaming table
@@ -183,7 +183,7 @@ def rename(state: State_STT, static_instruction: Instruction) -> Tuple[Dict, Ins
 # TODO: implement (STT formal pg. 5)
 # TODO: does storing fresh data in state make sense if their are multiple states? are there multiple states??
 # "for a given STT state `σ`, returns a physical register `x` that is fresh in `σ`, meaning that it has not been previously mapped to by `rt`"
-def fresh(state: State_STT) -> int:
+def fresh(state: State_OutO) -> int:
     # keep track of the lowest unused PRegID in state? Then fresh can just return that ID and increment the number
     # make sure that freshest isn't holding a reference to state.next_fresh. deepcopy?
     freshest = state.next_fresh
@@ -200,7 +200,7 @@ def underSpec(ckpt: List[Tuple[int, int, Dict]], i: int) -> bool:
     return False
 
 # TODO: change if taint implementation changes
-def taint(state: State_STT, static_instruction: Instruction) -> Dict:
+def taint(state: State_OutO, static_instruction: Instruction) -> Dict:
     _, dynamic_instruction = rename(state, static_instruction)
     tainted = state.T
 
@@ -230,7 +230,7 @@ def taint(state: State_STT, static_instruction: Instruction) -> Dict:
             return taint_copy
 
 # TODO: change if taint implementation changes
-def noTaintedInputs(state: State_STT, i: int) -> bool:
+def noTaintedInputs(state: State_OutO, i: int) -> bool:
     # TODO: bounds check?
     instruction: Instruction = state.rob.seq[i][1]
     tainted: Dict = state.T
@@ -264,7 +264,7 @@ def noTaintedInputs(state: State_STT, i: int) -> bool:
 
 
 # TODO: change if taint implementation changes
-def untaintInstr(state: State_STT, i: int) -> Dict:
+def untaintInstr(state: State_OutO, i: int) -> Dict:
     instruction: Instruction = state.rob.seq[i][1]
 
     x_d: int = instruction.operands[0]
@@ -286,7 +286,7 @@ def untaintInstr(state: State_STT, i: int) -> Dict:
     else:
         return deepcopy(state.T)
 
-def untaint(state: State_STT) -> State_STT:
+def untaint(state: State_OutO) -> State_OutO:
     new_state = deepcopy(state)
 
     for i in range(state.rob.head, len(state.rob.seq)-1): # 'for i from σ.rob_head to σ.rob_tail − 1 do...'
@@ -298,7 +298,7 @@ def untaint(state: State_STT) -> State_STT:
 
 ### fetch events
 
-def fetch_immediate(state: State_STT, static_instruction: Instruction) -> State_STT:
+def fetch_immediate(state: State_OutO, static_instruction: Instruction) -> State_OutO:
     new_state = deepcopy(state)
 
     new_rt, dynamic_instruction = rename(new_state, static_instruction)
@@ -317,7 +317,7 @@ def fetch_immediate(state: State_STT, static_instruction: Instruction) -> State_
 
     return new_state
 
-def fetch_arithmetic(state: State_STT, static_instruction: Instruction):
+def fetch_arithmetic(state: State_OutO, static_instruction: Instruction):
     new_state = deepcopy(state)
 
     new_rt, dynamic_instruction = rename(new_state, static_instruction)
@@ -336,7 +336,7 @@ def fetch_arithmetic(state: State_STT, static_instruction: Instruction):
 
     return new_state
 
-def fetch_branch(state: State_STT, static_instruction: Instruction):
+def fetch_branch(state: State_OutO, static_instruction: Instruction):
     new_state = deepcopy(state)
 
     new_rt, dynamic_instruction = rename(new_state, static_instruction)
@@ -363,7 +363,7 @@ def fetch_branch(state: State_STT, static_instruction: Instruction):
 
     return new_state
 
-def fetch_load(state: State_STT, static_instruction: Instruction):
+def fetch_load(state: State_OutO, static_instruction: Instruction):
     new_state = deepcopy(state)
 
     new_rt, dynamic_instruction = rename(new_state, static_instruction)
@@ -382,7 +382,7 @@ def fetch_load(state: State_STT, static_instruction: Instruction):
 
     return new_state
 
-def fetch_store(state: State_STT, static_instruction: Instruction):
+def fetch_store(state: State_OutO, static_instruction: Instruction):
     new_state = deepcopy(state)
 
     new_rt, dynamic_instruction = rename(new_state, static_instruction)
@@ -402,7 +402,7 @@ def fetch_store(state: State_STT, static_instruction: Instruction):
 
 #### load helper functions
 
-def StoresAreReady(state: State_STT, rob_i: int) -> bool:
+def StoresAreReady(state: State_OutO, rob_i: int) -> bool:
     for rob_j in state.sq:
         if rob_j < rob_i:
             _, older_store, _ = state.rob.seq[rob_j]
@@ -416,7 +416,7 @@ def StoresAreReady(state: State_STT, rob_i: int) -> bool:
 
     return True
 
-def CanForward(state: State_STT, rob_i: int, x_a: int, rob_j: int, x_v: int) -> bool:
+def CanForward(state: State_OutO, rob_i: int, x_a: int, rob_j: int, x_v: int) -> bool:
     in_store_queue: bool = rob_j in state.sq
     is_younger: bool = rob_j < rob_i
 
@@ -444,7 +444,7 @@ def CanForward(state: State_STT, rob_i: int, x_a: int, rob_j: int, x_v: int) -> 
 
     return in_store_queue and is_younger and registers_ready and addresses_match and no_younger_stores
 
-def loadResult(state: State_STT, rob_i: int, x_a: int, oldRes: int) -> int:
+def loadResult(state: State_OutO, rob_i: int, x_a: int, oldRes: int) -> int:
     for rob_j in state.sq:
         if rob_j < rob_i:
             _, dynamic_instruction, _ = state.rob.seq[rob_j]
@@ -464,7 +464,7 @@ def LoadLat(cache: List[int], target_address: int) -> int:
 
 ####
 
-def execute_immediate(state: State_STT, rob_index: int) -> State_STT:
+def execute_immediate(state: State_OutO, rob_index: int) -> State_OutO:
     assert(enabled_execute_immediate(state, rob_index)) # result is undefined if event isn't enabled
 
     new_state = deepcopy(state)
@@ -479,7 +479,7 @@ def execute_immediate(state: State_STT, rob_index: int) -> State_STT:
 
     return new_state
 
-def enabled_execute_immediate(state: State_STT, rob_index: int) -> bool:
+def enabled_execute_immediate(state: State_OutO, rob_index: int) -> bool:
     _, dynamic_instruction, _ = state.rob.seq[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
@@ -489,7 +489,7 @@ def enabled_execute_immediate(state: State_STT, rob_index: int) -> bool:
     
     return True
 
-def execute_arithmetic(state: State_STT, rob_index: int) -> State_STT:
+def execute_arithmetic(state: State_OutO, rob_index: int) -> State_OutO:
     assert(enabled_execute_arithmetic(state, rob_index))
 
     new_state = deepcopy(state)
@@ -506,7 +506,7 @@ def execute_arithmetic(state: State_STT, rob_index: int) -> State_STT:
 
     return new_state
 
-def enabled_execute_arithmetic(state: State_STT, rob_index: int) -> bool:
+def enabled_execute_arithmetic(state: State_OutO, rob_index: int) -> bool:
     _, dynamic_instruction, _ = state.rob.seq[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
@@ -522,7 +522,7 @@ def enabled_execute_arithmetic(state: State_STT, rob_index: int) -> bool:
 
     return True
 
-def execute_branch_success(state: State_STT, rob_index: int) -> State_STT:
+def execute_branch_success(state: State_OutO, rob_index: int) -> State_OutO:
     assert(enabled_execute_branch_success(state, rob_index))
 
     new_state = deepcopy(state)
@@ -539,7 +539,7 @@ def execute_branch_success(state: State_STT, rob_index: int) -> State_STT:
 
     return new_state
 
-def enabled_execute_branch_success(state: State_STT, rob_index: int) -> bool:
+def enabled_execute_branch_success(state: State_OutO, rob_index: int) -> bool:
     _, dynamic_instruction, branch_prediction = state.rob.seq[rob_index]
     spc, b = branch_prediction
 
@@ -562,7 +562,7 @@ def enabled_execute_branch_success(state: State_STT, rob_index: int) -> bool:
 
     return True
 
-def execute_branch_fail(state: State_STT, rob_index: int) -> State_STT:
+def execute_branch_fail(state: State_OutO, rob_index: int) -> State_OutO:
     assert(enabled_execute_branch_fail(state, rob_index))
 
     new_state = deepcopy(state)
@@ -604,7 +604,7 @@ def execute_branch_fail(state: State_STT, rob_index: int) -> State_STT:
 
     return new_state
 
-def enabled_execute_branch_fail(state: State_STT, rob_index: int) -> bool:
+def enabled_execute_branch_fail(state: State_OutO, rob_index: int) -> bool:
     origin_pc, dynamic_instruction, branch_prediction = state.rob.seq[rob_index]
     spc, b = branch_prediction
 
@@ -632,7 +632,7 @@ def enabled_execute_branch_fail(state: State_STT, rob_index: int) -> bool:
     
     return True
 
-def execute_load_begin_get_s(state: State_STT, rob_index: int, t: int) -> State_STT:
+def execute_load_begin_get_s(state: State_OutO, rob_index: int, t: int) -> State_OutO:
     assert(enabled_execute_load_begin_get_s(state, rob_index))
 
     new_state = deepcopy(state)
@@ -669,7 +669,7 @@ def execute_load_begin_get_s(state: State_STT, rob_index: int, t: int) -> State_
 
     return new_state
 
-def enabled_execute_load_begin_get_s(state: State_STT, rob_index: int) -> bool:
+def enabled_execute_load_begin_get_s(state: State_OutO, rob_index: int) -> bool:
     _, dynamic_instruction, _ = state.rob.seq[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
@@ -684,7 +684,7 @@ def enabled_execute_load_begin_get_s(state: State_STT, rob_index: int) -> bool:
 
     return True
 
-def execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> State_STT:
+def execute_load_end_get_s(state: State_OutO, rob_index: int, t: int) -> State_OutO:
     assert(enabled_execute_load_end_get_s(state, rob_index, t))
 
     new_state = deepcopy(state)
@@ -713,7 +713,7 @@ def execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> State_ST
 
     return new_state
 
-def enabled_execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> bool:
+def enabled_execute_load_end_get_s(state: State_OutO, rob_index: int, t: int) -> bool:
     lq_entry = None
     for entry in state.lq:
         if entry[0] == rob_index:
@@ -731,7 +731,7 @@ def enabled_execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> 
 
     return True
 
-def execute_load_complete(state: State_STT, rob_index: int) -> State_STT:
+def execute_load_complete(state: State_OutO, rob_index: int) -> State_OutO:
     assert(enabled_execute_load_complete(state, rob_index))
 
     new_state = deepcopy(state)
@@ -749,7 +749,7 @@ def execute_load_complete(state: State_STT, rob_index: int) -> State_STT:
 
     return new_state
 
-def enabled_execute_load_complete(state: State_STT, rob_index: int) -> bool:
+def enabled_execute_load_complete(state: State_OutO, rob_index: int) -> bool:
     lq_entry = None
     for entry in state.lq:
         if entry[0] == rob_index and entry[1] is True: # (i, True, _) ∈ lq
@@ -761,7 +761,7 @@ def enabled_execute_load_complete(state: State_STT, rob_index: int) -> bool:
 
 ### commit events
 
-def commit_immediate(state: State_STT) -> State_STT:
+def commit_immediate(state: State_OutO) -> State_OutO:
     assert(enabled_commit_immediate(state))
 
     new_state = deepcopy(state)
@@ -770,7 +770,7 @@ def commit_immediate(state: State_STT) -> State_STT:
 
     return new_state
 
-def enabled_commit_immediate(state: State_STT) -> bool:
+def enabled_commit_immediate(state: State_OutO) -> bool:
     _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
 
     x_d: int = dynamic_instruction.operands[0]
@@ -780,7 +780,7 @@ def enabled_commit_immediate(state: State_STT) -> bool:
 
     return True
 
-def commit_arithmetic(state: State_STT) -> State_STT:
+def commit_arithmetic(state: State_OutO) -> State_OutO:
     assert(enabled_commit_arithmetic(state))
 
     new_state = deepcopy(state)
@@ -789,7 +789,7 @@ def commit_arithmetic(state: State_STT) -> State_STT:
 
     return new_state
 
-def enabled_commit_arithmetic(state: State_STT) -> bool:
+def enabled_commit_arithmetic(state: State_OutO) -> bool:
     _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
 
     x_d: int = dynamic_instruction.operands[0]
@@ -799,7 +799,7 @@ def enabled_commit_arithmetic(state: State_STT) -> bool:
 
     return True
 
-def commit_branch(state: State_STT) -> State_STT:
+def commit_branch(state: State_OutO) -> State_OutO:
     assert(enabled_commit_branch(state))
 
     new_state = deepcopy(state)
@@ -808,7 +808,7 @@ def commit_branch(state: State_STT) -> State_STT:
 
     return new_state
 
-def enabled_commit_branch(state: State_STT) -> bool:
+def enabled_commit_branch(state: State_OutO) -> bool:
     checkpoint_indices = [ checkpoint[0] for checkpoint in state.ckpt ]
 
     if state.rob.head in checkpoint_indices:
@@ -816,7 +816,7 @@ def enabled_commit_branch(state: State_STT) -> bool:
 
     return True
 
-def commit_load(state: State_STT) -> State_STT:
+def commit_load(state: State_OutO) -> State_OutO:
     assert(enabled_commit_load(state))
 
     new_state = deepcopy(state)
@@ -827,7 +827,7 @@ def commit_load(state: State_STT) -> State_STT:
 
     return new_state
 
-def enabled_commit_load(state: State_STT) -> bool:
+def enabled_commit_load(state: State_OutO) -> bool:
     _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
 
     x_d: int = dynamic_instruction.operands[0]
@@ -837,7 +837,7 @@ def enabled_commit_load(state: State_STT) -> bool:
 
     return True
 
-def commit_store(state: State_STT) -> State_STT:
+def commit_store(state: State_OutO) -> State_OutO:
     assert(enabled_commit_store(state))
 
     new_state = deepcopy(state)
@@ -857,7 +857,7 @@ def commit_store(state: State_STT) -> State_STT:
 
     return new_state
 
-def enabled_commit_store(state: State_STT) -> bool:
+def enabled_commit_store(state: State_OutO) -> bool:
     _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
 
     x_a: int = dynamic_instruction.operands[0]
@@ -902,7 +902,7 @@ class M_Event:
         self.rob_index = rob_index
         self.instruction = instruction
 
-def perform(state: State_STT, event: M_Event, t: int) -> State_STT:
+def perform(state: State_OutO, event: M_Event, t: int) -> State_OutO:
     match event.name:
         case M_Event_Name.FETCH_IMMEDIATE:
             return fetch_immediate(state, event.instruction)
@@ -958,7 +958,7 @@ def perform(state: State_STT, event: M_Event, t: int) -> State_STT:
         case _:
             return state
             
-def enabled(state: State_STT, event: M_Event, t: int) -> bool:
+def enabled(state: State_OutO, event: M_Event, t: int) -> bool:
     match event.name:
         case M_Event_Name.EXECUTE_IMMEDIATE:
             return enabled_execute_immediate(state, event.rob_index)
@@ -1015,7 +1015,7 @@ def fetch_event(instruction: Instruction) -> M_Event:
     
     return M_Event(name=event_name, rob_index=None, instruction=instruction)
 
-def execute_event(state: State_STT, rob_index: int) -> M_Event:
+def execute_event(state: State_OutO, rob_index: int) -> M_Event:
     _, instruction, _ = state.rob.seq[rob_index]
 
     event_name: M_Event_Name = None
@@ -1076,7 +1076,7 @@ def commit_event(instruction: Instruction) -> M_Event:
 # ...for ready to be necessary (instead of just using enabled(start_state)) the following must exist:
 # unenabled but ready execute events that since the beginning of the cycle have become enabled by having their non-ready conditions met
 # -> non ready conditions like: storesAreReady(i), t >= t_end etc.
-def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
+def ready(state: State_OutO, execute_event: M_Event, t: int) -> bool:
     match execute_event.name:
         case None:
             # name is set to none when the instruction for 'execution' is a store
@@ -1117,8 +1117,8 @@ def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
 
 example_program: Program = STT_program.loop
 
-state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],{},0)
-def STT_Processor(P: Program) -> None:
+state_init = State_OutO(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],{},0)
+def OutO_Processor(P: Program) -> None:
     state = state_init
 
     # DEBUG #
@@ -1129,7 +1129,7 @@ def STT_Processor(P: Program) -> None:
     halt =  False
 
     while not halt:
-        state, halt = STT_Logic(P, state, t)
+        state, halt = OutO_Logic(P, state, t)
         t += 1
 
     # DEBUG #
@@ -1139,10 +1139,10 @@ def STT_Processor(P: Program) -> None:
 COMMIT_WIDTH: int = 2
 FETCH_WIDTH: int = 2
 
-def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
-    state_snapshot: State_STT = deepcopy(state)
+def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]:
+    state_snapshot: State_OutO = deepcopy(state)
 
-    print(f"STT_Logic for timestep {t}")
+    print(f"OutO_Logic for timestep {t}")
 
     print('\n')
     print(state)
