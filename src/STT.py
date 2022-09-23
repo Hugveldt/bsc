@@ -46,6 +46,7 @@ class RenamingTable:
 class ReorderBuffer:
     seq     : List[Tuple[int, Instruction, bool]]
     head    : int
+    yrot    : Dict
 
 # TODO: change to dataclass like `ReorderBuffer`?
 class State_STT:
@@ -1129,7 +1130,7 @@ def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
 
 example_program: Program = STT_program.loop
 
-state_init = State_STT(0,{},{},{},RenamingTable({},{},{}),ReorderBuffer([],0),[],[],BrPr(),[],[],{},0)
+state_init = State_STT(0,{},{},{},RenamingTable({},{},{}),ReorderBuffer([],0,{}),[],[],BrPr(),[],[],{},0)
 def STT_Processor(P: Program) -> None:
     state = state_init
 
