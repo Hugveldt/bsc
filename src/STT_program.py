@@ -144,7 +144,7 @@ loop: Program = [
 ]
 
 # TODO: this doesn't produce any delayed execution
-tainted_input : Program = [
+speculative_load : Program = [
     Instruction(Instruction_Name.IMMED,  [0, 1]),
     Instruction(Instruction_Name.IMMED,  [1, 10]),
     Instruction(Instruction_Name.IMMED,  [2, 999]),
