@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, TypeAlias
+from typing import Dict, List, Optional, Tuple
 from enum import Enum, auto
 from copy import deepcopy
 from STT_program import Instruction_Name, Instruction, Program, random_program, print_program
@@ -30,23 +30,19 @@ class BrPr:
 
         return tuple([spc, b])
 
-class RenamingTable:
-    def __init__(self, rt: Dict, YRoT: Dict, LL: Dict):
-        self.rt = rt
-        self.YRoT = YRoT
-        self.LL = LL
+class Taint:
+    def __init__(self, yrot: Dict, rt_YRoT: Dict, rt_LL: Dict):
+        self.yrot = yrot
+        self.rt_YRoT = rt_YRoT
+        self.rt_LL = rt_LL
 
-    def __getitem__(self, item):
-        return self.rt[item]
-
-    def __setitem__(self, LRegID: int, PRegID: int):
-        self.rt[LRegID] = PRegID
-
-@dataclass
 class ReorderBuffer:
-    seq     : List[Tuple[int, Instruction, bool]]
-    head    : int
-    yrot    : Dict
+    def __init__(self, seq: List[Tuple[int, Instruction, bool]], head: int):
+        self.seq = seq
+        self.head = head
+
+    def tail(self):
+        return len(self.seq)
 
 # TODO: change to dataclass like `ReorderBuffer`?
 class State_STT:
@@ -55,16 +51,15 @@ class State_STT:
                 mem: Dict,
                 reg: Dict,
                 ready: Dict,
-                rt: RenamingTable,
+                rt: Dict,
                 rob: ReorderBuffer,
                 lq: List[Tuple[int, bool, int]],
                 sq: List[int],
                 bp: BrPr,
                 ckpt: List[Tuple[int, int, Dict]],
                 C: List[int],
-                T: Dict, # TODO: define taint. Seems like a mapping: PRegID -> bool would do
-                ### custom fields ###
-                next_fresh: int = 0 # the lowest unused PRegID. TODO: remove if necessary
+                T: Taint,
+                next_fresh: int = 0 # the lowest unused PRegID
                 ):
         self.pc = pc
         self.mem = mem
@@ -88,7 +83,7 @@ class State_STT:
         s += f'\n\tmemory: {self.mem}'
         s += f'\n\tregisters: {self.reg}'
         s += f'\n\tready: {self.ready}'
-        s += f'\n\trenaming table:\n\t\trt: {self.rt.rt}\n\t\trt_YRoT: {self.rt.YRoT}\n\t\trt_LL: {self.rt.LL}'
+        s += f'\n\trenaming table: {self.rt}'
 
         rob_seq_s = '['
         for pc, instruction, branch_pred in self.rob.seq:
@@ -106,7 +101,7 @@ class State_STT:
         s += f'\n\tbranch predictor:\n{corr_preds_s}'
         s += f'\n\tbranch checkpoints: {self.ckpt}'
         s += f'\n\tcache: {self.C}'
-        s += f'\n\ttaint: {self.T}'
+        s += f'\n\ttaint:\n\t\tyrot: {self.T.yrot}\n\t\trt_YRoT: {self.T.rt_YRoT}\n\t\trt_LL: {self.T.rt_LL}'
         s += f'\n---------------------------'
 
         return s
@@ -212,100 +207,68 @@ def underSpec(ckpt: List[Tuple[int, int, Dict]], i: int) -> bool:
             return True
     return False
 
-# TODO: change if taint implementation changes
-def taint(state: State_STT, static_instruction: Instruction) -> Dict:
-    _, dynamic_instruction = rename(state, static_instruction)
-    tainted = state.T
+def taint(state: State_STT, static_instruction: Instruction) -> Tuple[Dict, Dict, Dict]:
+    new_yrot: Dict = deepcopy(state.T.yrot)
+    new_yrot[state.rob.tail()] = newYRoT(state, static_instruction)
 
-    match dynamic_instruction.name:
-        case Instruction_Name.OP:
-            new_taint = deepcopy(state.T)
-            
-            x_d: int = dynamic_instruction.operands[0]
-            x_a: int = dynamic_instruction.operands[1]
-            x_b: int = dynamic_instruction.operands[2]
+    new_rt_YRoT: Dict = deepcopy(state.T.rt_YRoT)
+    new_rt_LL:   Dict = deepcopy(state.T.rt_LL)
 
-            new_taint[x_d] = (x_a in tainted and tainted[x_a]) or (x_b in tainted and tainted[x_b])
-            
-            return new_taint
-        
-        case Instruction_Name.LOAD:
-            new_taint = deepcopy(state.T)
+    if static_instruction.name is Instruction_Name.LOAD or static_instruction.name is Instruction_Name.OP or static_instruction.name is Instruction_Name.IMMED:
+        r_d: int = static_instruction.operands[0]
 
-            x_d: int = dynamic_instruction.operands[0]
+        new_rt_YRoT[r_d] = newYRoT(state, static_instruction)
+        new_rt_LL[r_d]   = state.rob.tail() if static_instruction.name is Instruction_Name.LOAD else None
 
-            new_taint[x_d] = underSpec(state.ckpt, len(state.rob.seq)) # underSpec(σ.ckpt, σ.rob_tail)
+    return tuple([new_yrot, new_rt_YRoT, new_rt_LL])
 
-            return new_taint
+def taintingInstr(state: State_STT, r: int) -> int:
+    return state.T.rt_YRoT[r] if state.T.rt_LL[r] is None else state.T.rt_LL[r]
 
-        case _:
-            taint_copy = deepcopy(state.T)
-            return taint_copy
-
-# TODO: change if taint implementation changes
-def noTaintedInputs(state: State_STT, i: int) -> bool:
-    # TODO: bounds check?
-    instruction: Instruction = state.rob.seq[i][1]
-    tainted: Dict = state.T
-
-    match instruction.name:
-        case Instruction_Name.IMMED:
-            return True
-
-        case Instruction_Name.OP:
-            x_a: int = instruction.operands[1]
-            x_b: int = instruction.operands[2]
-
-            return (x_a not in tainted or not tainted[x_a]) and (x_b not in tainted or not tainted[x_b])
-        
-        case Instruction_Name.LOAD:
-            x_a: int = instruction.operands[1]
-
-            return x_a not in tainted or not tainted[x_a]
-        
-        case Instruction_Name.BRANCH:
-            x_c: int = instruction.operands[0]
-            x_d: int = instruction.operands[1]
-
-            return (x_c not in tainted or not tainted[x_c]) and (x_d not in tainted or not tainted[x_d])
-        
-        case Instruction_Name.STORE:
-            x_a: int = instruction.operands[0]
-            x_v: int = instruction.operands[1]
-
-            return (x_a not in tainted or not tainted[x_a]) and (x_v not in tainted or not tainted[x_v])
-
-
-# TODO: change if taint implementation changes
-def untaintInstr(state: State_STT, i: int) -> Dict:
-    instruction: Instruction = state.rob.seq[i][1]
-
-    x_d: int = instruction.operands[0]
-
-    if instruction.name is Instruction_Name.OP and noTaintedInputs(state, i):
-        new_taint = deepcopy(state.T)
-
-        new_taint[x_d] = False
-
-        return new_taint
-    
-    elif instruction.name is Instruction_Name.LOAD and not underSpec(state.ckpt, i):
-        new_taint = deepcopy(state.T)
-
-        new_taint[x_d] = False
-
-        return new_taint
-    
+def max_taint(t_a: Optional[int], t_b: Optional[int]) -> Optional[int]:
+    if t_a is None:
+        if t_b is None:
+            return None
+        else:
+            return t_b
     else:
-        return deepcopy(state.T)
+        if t_b is None:
+            return t_a
+        else:
+            return max(t_a, t_b)
+
+def newYRoT(state: State_STT, static_instruction: Instruction) -> Optional[int]:
+    match static_instruction.name:
+        case Instruction_Name.IMMED:
+            return None
+        case Instruction_Name.OP:
+            r_a: int = static_instruction.operands[1]
+            r_b: int = static_instruction.operands[2]
+
+            return max_taint(taintingInstr(state, r_a), taintingInstr(state, r_b))
+
+        case Instruction_Name.LOAD:
+            r_a: int = static_instruction.operands[1]
+
+            return taintingInstr(r_a)
+
+        case Instruction_Name.BRANCH:
+            r_c: int = static_instruction.operands[0]
+            r_d: int = static_instruction.operands[1]
+
+            return max_taint(taintingInstr(state, r_c), taintingInstr(state, r_d))
+
+        case Instruction_Name.STORE:
+            r_a: int = static_instruction.operands[0]
+            r_v: int = static_instruction.operands[1]
+
+            return max_taint(taintingInstr(state, r_a), taintingInstr(state, r_v))
+
+def noTaintedInputs(state: State_STT, i: int) -> bool:
+    return state.T.yrot[i] is None or not underSpec(state.ckpt, state.T.yrot[i])
 
 def untaint(state: State_STT) -> State_STT:
-    new_state = deepcopy(state)
-
-    for i in range(state.rob.head, len(state.rob.seq)-1): # 'for i from σ.rob_head to σ.rob_tail − 1 do...'
-        new_state.T = untaintInstr(new_state, i)
-    
-    return new_state
+    return state
 
 # μ-events
 
@@ -360,7 +323,7 @@ def fetch_branch(state: State_STT, static_instruction: Instruction):
 
     new_pc = spc if b else state.pc + 1
 
-    new_ckpt = tuple([len(state.rob.seq), state.pc, state.rt]) # "newCkpt = (rob_tail, pc, rt)"
+    new_ckpt = tuple([state.rob.tail(), state.pc, state.rt]) # "newCkpt = (rob_tail, pc, rt)"
 
     new_state.pc = new_pc
 
@@ -407,7 +370,7 @@ def fetch_store(state: State_STT, static_instruction: Instruction):
     rob_entry = tuple([state.pc, dynamic_instruction, None])
     new_state.rob.seq.append(rob_entry)
 
-    new_state.sq.append(len(state.rob.seq)) #  "sq ++ [rob_tail]"
+    new_state.sq.append(state.rob.tail()) #  "sq ++ [rob_tail]"
 
     return new_state
 
@@ -1128,9 +1091,18 @@ def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
 
             return operands_ready[1]
 
+def isExplicitBranch(e: M_Event) -> bool:
+    return e.name is M_Event_Name.EXECUTE_BRANCH_SUCCESS or e.name is M_Event_Name.EXECUTE_BRANCH_FAIL
+
+def isTransmitter(e: M_Event) -> bool:
+    return e.name is M_Event_Name.EXECUTE_LOAD_BEGIN_GET_S
+
+def delayed(state: State_STT, e: M_Event, t: int) -> bool:
+    return e.rob_index is not None and (isExplicitBranch(e) or isTransmitter(e)) and not noTaintedInputs(state, e.rob_index)   
+
 example_program: Program = STT_program.loop
 
-state_init = State_STT(0,{},{},{},RenamingTable({},{},{}),ReorderBuffer([],0,{}),[],[],BrPr(),[],[],{},0)
+state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],Taint({},{},{}),0)
 def STT_Processor(P: Program) -> None:
     state = state_init
 
@@ -1161,8 +1133,8 @@ def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
     print(state)
 
     print("\n\t[commit]\n")
-    for i in range(0, COMMIT_WIDTH):
-        if state.rob.head == len(state.rob.seq):
+    for i in range(1, COMMIT_WIDTH):
+        if state.rob.head == state.rob.tail():
             break
         instruction: Instruction = state.rob.seq[state.rob.head][1]
         e: M_Event = commit_event(instruction)
@@ -1176,12 +1148,16 @@ def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
     #print(state)
 
     print("\n\t[fetch]\n")
-    for i in range(0, FETCH_WIDTH):
+    for i in range(1, FETCH_WIDTH):
         if P[state.pc] is None:
             break # don't try and fetch beyond the end of the file
         instruction: Instruction = P[state.pc]
         e: M_Event = fetch_event(instruction)
+
         # state.T = taint(state, instruction)
+        new_yrot, new_rt_YRoT, new_rt_LL = taint(state, instruction)
+        state.T = Taint(new_yrot, new_rt_YRoT, new_rt_LL)
+
         print("\t - fetching the " + str(instruction.name.name) + " on line " + str(state.pc))
         state = perform(state, e, t)
         if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
@@ -1191,24 +1167,27 @@ def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
     #print(state)
     
     print("\n\t[execute]\n")
-    for i in range(state.rob.head, len(state_snapshot.rob.seq)): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
+    for i in range(state.rob.head, state_snapshot.rob.tail()): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
         instruction: Instruction = state.rob.seq[i][1]
         e: M_Event = execute_event(state, i)
-        if enabled(state, e, t) and ready(state_snapshot, e, t): # and not delayed(state_snapshot, e, t): # TODO: add this once delayed is implemented
+        if enabled(state, e, t) and ready(state_snapshot, e, t) and not delayed(state_snapshot, e, t):
             print("\t - executing " + str(instruction.name.name) + " " + str(instruction.operands))
             state = perform(state, e, t)
             if e.name == M_Event_Name.EXECUTE_BRANCH_FAIL:
                 break
 
+        if delayed(state_snapshot, e, t):
+            print(f"\n\n\t\t[DEBUG] {instruction.name.name} {instruction.operands} was delayed\n\t\t\texplicit branch? {isExplicitBranch(e)}\n\t\t\ttransmitter? {isTransmitter(e)}\n\t\t\ttainted inputs? {not noTaintedInputs(state_snapshot, e.rob_index)}\n\n")
+
     #print('\n')
     #print(state)
 
     # print("\n\t[untaint]\n")
-    # state = untaint(state)
+    state = untaint(state)
 
     print('\n')
     print(state)
 
-    halt: bool = P[state.pc] is None and state.rob.head == len(state.rob.seq) # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
+    halt: bool = P[state.pc] is None and state.rob.head == state.rob.tail() # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
 
     return tuple([state, halt])
