@@ -250,7 +250,7 @@ def newYRoT(state: State_STT, static_instruction: Instruction) -> Optional[int]:
         case Instruction_Name.LOAD:
             r_a: int = static_instruction.operands[1]
 
-            return taintingInstr(r_a)
+            return taintingInstr(state, r_a)
 
         case Instruction_Name.BRANCH:
             r_c: int = static_instruction.operands[0]
@@ -1100,7 +1100,7 @@ def isTransmitter(e: M_Event) -> bool:
 def delayed(state: State_STT, e: M_Event, t: int) -> bool:
     return e.rob_index is not None and (isExplicitBranch(e) or isTransmitter(e)) and not noTaintedInputs(state, e.rob_index)   
 
-example_program: Program = STT_program.loop
+example_program: Program = STT_program.speculative_load
 
 state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],Taint({},{},{}),0)
 def STT_Processor(P: Program) -> None:

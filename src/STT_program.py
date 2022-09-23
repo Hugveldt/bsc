@@ -143,3 +143,16 @@ loop: Program = [
     None
 ]
 
+# TODO: this doesn't produce any delayed execution
+tainted_input : Program = [
+    Instruction(Instruction_Name.IMMED,  [0, 1]),
+    Instruction(Instruction_Name.IMMED,  [1, 10]),
+    Instruction(Instruction_Name.IMMED,  [2, 999]),
+    Instruction(Instruction_Name.IMMED,  [3, 7]),
+    Instruction(Instruction_Name.STORE,  [1, 2]),
+    Instruction(Instruction_Name.BRANCH, [0, 3]),
+    Instruction(Instruction_Name.LOAD,   [4, 1]),
+    Instruction(Instruction_Name.LOAD,   [4, 1]),
+    None
+]
+
