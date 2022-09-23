@@ -729,7 +729,7 @@ def enabled_execute_load_end_get_s(state: State_OutO, rob_index: int, t: int) ->
 
     if t_end is None:
         return False
-    if t_end < t:
+    if t_end > t:
         return False
 
     return True

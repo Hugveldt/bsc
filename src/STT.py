@@ -435,7 +435,7 @@ def loadResult(state: State_STT, rob_i: int, x_a: int, oldRes: int) -> int:
 # TODO: decide how to implement (STT formal pg. 8)
 # "for a given sequence of memory addresses already accessed and the next address to access returns the number of cycles it takes to load the value by that address"
 def LoadLat(cache: List[int], target_address: int) -> int:
-    return 1
+    return 20
 
 
 ####
@@ -702,7 +702,7 @@ def enabled_execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> 
 
     if t_end is None:
         return False
-    if t_end < t:
+    if t_end > t:
         return False
 
     return True
