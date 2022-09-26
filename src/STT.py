@@ -868,6 +868,34 @@ class M_Event_Name(Enum):
     COMMIT_STORE                = auto()
 
 @dataclass
+class M_Event_Type:
+    Fetch_Events: List[M_Event_Name] = [
+        M_Event_Name.FETCH_IMMEDIATE,
+        M_Event_Name.FETCH_ARITHMETIC,
+        M_Event_Name.FETCH_BRANCH,
+        M_Event_Name.FETCH_LOAD,
+        M_Event_Name.FETCH_STORE
+    ]
+
+    Execute_Events: List[M_Event_Name] = [
+        M_Event_Name.EXECUTE_IMMEDIATE,
+        M_Event_Name.EXECUTE_ARITHMETIC,
+        M_Event_Name.EXECUTE_BRANCH_SUCCESS,
+        M_Event_Name.EXECUTE_BRANCH_FAIL,
+        M_Event_Name.EXECUTE_LOAD_BEGIN_GET_S,
+        M_Event_Name.EXECUTE_LOAD_END_GET_S,
+        M_Event_Name.EXECUTE_LOAD_COMPLETE
+    ]
+
+    Commit_Events: List[M_Event_Name] = [
+        M_Event_Name.COMMIT_IMMEDIATE,
+        M_Event_Name.COMMIT_ARITHMETIC,
+        M_Event_Name.COMMIT_BRANCH,
+        M_Event_Name.COMMIT_LOAD,
+        M_Event_Name.COMMIT_STORE
+    ]
+
+@dataclass
 class M_Event:
     name        : M_Event_Name
     rob_index   : Optional[int]
