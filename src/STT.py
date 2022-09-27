@@ -885,7 +885,6 @@ class M_Event_Name(Enum):
     COMMIT_LOAD                 = auto()
     COMMIT_STORE                = auto()
 
-@dataclass
 class M_Event_Type:
     Fetch_Events: List[M_Event_Name] = [
         M_Event_Name.FETCH_IMMEDIATE,
