@@ -270,6 +270,24 @@ def noTaintedInputs(state: State_STT, i: int) -> bool:
 def untaint(state: State_STT) -> State_STT:
     return state
 
+def tainted(state: State_STT, x: int) -> bool:
+    for i in range(state.rob.head, state.rob.tail()-1):
+        _, dynamic_instruction, _ = state.rob.seq[i]
+
+        if dynamic_instruction.name is Instruction_Name.LOAD and dynamic_instruction.operands[0] == x and underSpec(state.ckpt, i):
+            return True
+        else:
+            match dynamic_instruction.name:
+                case Instruction_Name.OP:
+                    if dynamic_instruction.operands[0] == x and not noTaintedInputs(state, i):
+                        return True
+                
+                case Instruction_Name.LOAD:
+                    if dynamic_instruction.operands[0] == x and not noTaintedInputs(state, i):
+                        return True
+
+    return False
+
 # μ-events
 
 ### fetch events
