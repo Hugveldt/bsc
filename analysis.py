@@ -56,4 +56,14 @@ def perform(k: State_Extended, e: M_Event, t: int) -> State_Extended:
         if rob_index_corresponds_to_in_order_idling_point:
             new_k.mispredicted = False
 
-    # TODO: add logic for updating new_k.doomed (STT formal pg. 18)
+    if k.mispredicted and e.name in M_Event_Type.Fetch_Events:
+        if e.name is M_Event_Name.FETCH_ARITHMETIC or e.name is M_Event_Name.FETCH_LOAD:
+          x: int = e.instruction.operands[0]
+          k.STT.T =  STT.taint(k.STT, e.instruction)
+
+          if STT.tainted(k.STT, x):
+            new_k.doomed[x] = True
+    
+    elif e.name is M_Event_Name.EXECUTE_BRANCH_FAIL:
+        if rob_index_corresponds_to_in_order_idling_point:
+            new_k.doomed.doomed = {} # doomed now maps all PRegIDs to false
