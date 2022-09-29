@@ -100,12 +100,7 @@ class State_STT:
         s += f'\n\treorder buffer (head: {self.rob.head}): {rob_seq_s}'
         s += f'\n\tload queue: {self.lq}'
         s += f'\n\tstore queue: {self.sq}'
-
-        corr_preds_s = 'N/A'
-        #for pc_br, pred in self.bp.correct_predictions.items():
-        #    corr_preds_s += f'\t{pc_br} : {bool(pred[1])} -> {pred[0]}'
-
-        s += f'\n\tbranch predictor:\n{corr_preds_s}'
+        s += f'\n\tbranch predictor:\n\t\tN/A'
         s += f'\n\tbranch checkpoints: {self.ckpt}'
         s += f'\n\tcache: {self.C}'
         s += f'\n\ttaint:\n\t\tyrot: {self.T.yrot}\n\t\trt_YRoT: {self.T.rt_YRoT}\n\t\trt_LL: {self.T.rt_LL}'
@@ -272,7 +267,7 @@ def newYRoT(state: State_STT, static_instruction: Instruction) -> Optional[int]:
             return max_taint(taintingInstr(state, r_a), taintingInstr(state, r_v))
 
 def noTaintedInputs(state: State_STT, i: int) -> bool:
-    return state.T.yrot[i] is None or not underSpec(state.ckpt, state.T.yrot[i])
+    return i not in state.T.yrot or state.T.yrot[i] is None or not underSpec(state.ckpt, state.T.yrot[i])
 
 def untaint(state: State_STT) -> State_STT:
     return state
@@ -647,8 +642,8 @@ def execute_load_begin_get_s(state: State_STT, rob_index: int, t: int) -> State_
     lq_entry = None
     lq_index = None
     for i, entry in enumerate(state.lq):
-        print(i)
-        print(entry)
+        #print(i)
+        #print(entry)
         if entry[0] == rob_index:
             assert(entry[2] is None) # might be unnecessary
             lq_entry = deepcopy(entry)
@@ -777,6 +772,7 @@ def enabled_commit_immediate(state: State_STT) -> bool:
     x_d: int = dynamic_instruction.operands[0]
 
     if x_d not in state.ready or state.ready[x_d] is False:
+        #print(f"\n\tx_d of immed not ready...")
         return False
 
     return True
@@ -796,6 +792,7 @@ def enabled_commit_arithmetic(state: State_STT) -> bool:
     x_d: int = dynamic_instruction.operands[0]
 
     if x_d not in state.ready or state.ready[x_d] is False:
+        #print(f"\n\tx_d of op not ready...")
         return False
 
     return True
@@ -813,6 +810,7 @@ def enabled_commit_branch(state: State_STT) -> bool:
     checkpoint_indices = [ checkpoint[0] for checkpoint in state.ckpt ]
 
     if state.rob.head in checkpoint_indices:
+        #print(f"\n\tbranch is still unresolved...")
         return False
 
     return True
@@ -834,6 +832,7 @@ def enabled_commit_load(state: State_STT) -> bool:
     x_d: int = dynamic_instruction.operands[0]
 
     if x_d not in state.ready or state.ready[x_d] is False:
+        #print(f"\n\tx_d of load not ready...")
         return False
 
     return True
@@ -865,8 +864,10 @@ def enabled_commit_store(state: State_STT) -> bool:
     x_v: int = dynamic_instruction.operands[1]
 
     if x_a not in state.ready or state.ready[x_a] is False:
+        #print(f"\n\tx_a of store not ready...")
         return False
     if x_v not in state.ready or state.ready[x_v] is False:
+        #print(f"\n\tx_v of store not ready...")
         return False
 
     return True
@@ -1120,26 +1121,22 @@ def ready(state: State_STT, execute_event: M_Event, t: int) -> bool:
             return True
 
         case M_Event_Name.EXECUTE_ARITHMETIC:
-            _, dynamic_instruction, _ = state.rob[execute_event.rob_index]
-            operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
+            operands_ready = [ True if op in state.ready and state.ready[op] else False for op in execute_event.instruction.operands ]
             
             return operands_ready[1] and operands_ready[2]
 
         case M_Event_Name.EXECUTE_BRANCH_SUCCESS:
-            _, dynamic_instruction, _ = state.rob[execute_event.rob_index]
-            operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
+            operands_ready = [ True if op in state.ready and state.ready[op] else False for op in execute_event.instruction.operands ]
 
             return operands_ready[0] and operands_ready[1]
 
         case M_Event_Name.EXECUTE_BRANCH_FAIL:
-            _, dynamic_instruction, _ = state.rob[execute_event.rob_index]
-            operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
+            operands_ready = [ True if op in state.ready and state.ready[op] else False for op in execute_event.instruction.operands ]
 
             return operands_ready[0] and operands_ready[1]
 
         case M_Event_Name.EXECUTE_LOAD_BEGIN_GET_S:
-            _, dynamic_instruction, _ = state.rob[execute_event.rob_index]
-            operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
+            operands_ready = [ True if op in state.ready and state.ready[op] else False for op in execute_event.instruction.operands ]
 
             return operands_ready[1]
 
@@ -1152,15 +1149,15 @@ def isTransmitter(e: M_Event) -> bool:
 def delayed(state: State_STT, e: M_Event, t: int) -> bool:
     return e.rob_index is not None and (isExplicitBranch(e) or isTransmitter(e)) and not noTaintedInputs(state, e.rob_index)   
 
-example_program: Program = STT_program.speculative_load
+example_program: Program = STT_program.loop
 
 state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],Taint({},{},{}),0)
 def STT_Processor(P: Program) -> None:
     state = state_init
 
     # DEBUG #
-    print("[Initial State]\n")
-    print(state)
+    #print("[Initial State]\n")
+    #print(state)
 
     t = 0
     halt =  False
@@ -1170,8 +1167,8 @@ def STT_Processor(P: Program) -> None:
         t += 1
 
     # DEBUG #
-    print(f"[End State] - timestep {t}\n")
-    print(state)
+    #print(f"[End State] - timestep {t}\n")
+    #print(state)
 
 COMMIT_WIDTH: int = 2
 FETCH_WIDTH: int = 2
@@ -1179,28 +1176,30 @@ FETCH_WIDTH: int = 2
 def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
     state_snapshot: State_STT = deepcopy(state)
 
-    print(f"STT_Logic for timestep {t}")
-
-    print('\n')
-    print(state)
-
-    print("\n\t[commit]\n")
-    for i in range(1, COMMIT_WIDTH):
-        if state.rob.head == state.rob.tail:
-            break
-        instruction: Instruction = state.rob[state.rob.head][1]
-        e: M_Event = commit_event(instruction)
-        if enabled(state, e, t):
-            print("\t - committing " + str(instruction.name.name) + "" + str(instruction.operands))
-            state = perform(state, e, t)
-        else:
-            break
+    #print(f"STT_Logic for timestep {t}")
 
     #print('\n')
     #print(state)
 
-    print("\n\t[fetch]\n")
-    for i in range(1, FETCH_WIDTH):
+    #print("\n\t[commit]\n")
+    for i in range(1, COMMIT_WIDTH+1):
+        if state.rob.tail == 0 or state.rob.head == state.rob.tail:
+            break
+
+        instruction: Instruction = state.rob[state.rob.head][1]
+        e: M_Event = commit_event(instruction)
+        if enabled(state, e, t):
+            #print("\t - committing " + str(instruction.name.name) + "" + str(instruction.operands))
+            state = perform(state, e, t)
+        else:
+            #print(f"\t...commit not enabled\n")
+            break
+
+    ##print('\n')
+    ##print(state)
+
+    #print("\n\t[fetch]\n")
+    for i in range(1, FETCH_WIDTH+1):
         if P[state.pc] is None:
             break # don't try and fetch beyond the end of the file
         instruction: Instruction = P[state.pc]
@@ -1210,36 +1209,38 @@ def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
         new_yrot, new_rt_YRoT, new_rt_LL = taint(state, instruction)
         state.T = Taint(new_yrot, new_rt_YRoT, new_rt_LL)
 
-        print("\t - fetching the " + str(instruction.name.name) + " on line " + str(state.pc))
+        #print("\t - fetching the " + str(instruction.name.name) + " on line " + str(state.pc))
         state = perform(state, e, t)
         if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
             break
 
-    #print('\n')
-    #print(state)
+    ##print('\n')
+    ##print(state)
     
-    print("\n\t[execute]\n")
+    #print("\n\t[execute]\n")
     for i in range(state.rob.head, state_snapshot.rob.tail): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
         instruction: Instruction = state.rob[i][1]
         e: M_Event = execute_event(state, i)
+        e.instruction = instruction
+
         if enabled(state, e, t) and ready(state_snapshot, e, t) and not delayed(state_snapshot, e, t):
-            print("\t - executing " + str(instruction.name.name) + " " + str(instruction.operands))
+            #print("\t - executing " + str(instruction.name.name) + " " + str(instruction.operands))
             state = perform(state, e, t)
             if e.name == M_Event_Name.EXECUTE_BRANCH_FAIL:
                 break
 
-        if delayed(state_snapshot, e, t):
-            print(f"\n\n\t\t[DEBUG] {instruction.name.name} {instruction.operands} was delayed\n\t\t\texplicit branch? {isExplicitBranch(e)}\n\t\t\ttransmitter? {isTransmitter(e)}\n\t\t\ttainted inputs? {not noTaintedInputs(state_snapshot, e.rob_index)}\n\n")
+    ##print('\n')
+    ##print(state)
+
+    # #print("\n\t[untaint]\n")
+    state = untaint(state)
 
     #print('\n')
     #print(state)
 
-    # print("\n\t[untaint]\n")
-    state = untaint(state)
-
-    print('\n')
-    print(state)
+    #print(f"\n\n\t\tP[pc]: {P[state.pc]} | h={state.rob.head} vs. t={state.rob.tail}\n\n")
 
     halt: bool = P[state.pc] is None and state.rob.head == state.rob.tail # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
 
     return tuple([state, halt])
+    

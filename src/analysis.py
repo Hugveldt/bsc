@@ -45,18 +45,33 @@ def perform(k: State_Extended, e: M_Event, t: int) -> State_Extended:
         new_k.in_order = in_order.perform(k.in_order, e.instruction, t)
 
     if e.name is M_Event_Name.FETCH_BRANCH:
-        # TODO: work out how to define this bool... (and rename it)
-        STT_mispredicted_branch: bool = True
+        taken: bool = bool(e.instruction.operands[0])
 
-        if STT_mispredicted_branch:
-            new_k.mispredicted = True
+        STT_mispredicted: bool = False
+
+        predicted_target, predicted_taken = k.STT.bp.predict(k.STT.pc)
+
+        correct_direction: bool = predicted_taken is taken
+
+        correctly_taken: bool = taken is True and predicted_taken is True
+
+        correct_target: bool = predicted_target == k.in_order.pc
+
+        if not correct_direction:
+            STT_mispredicted = True
+        elif correctly_taken and not correct_target:
+            STT_mispredicted = True
+            
+        new_k.mispredicted = STT_mispredicted
     
     elif e.name is M_Event_Name.EXECUTE_BRANCH_FAIL:
-        # TODO: work out how to define this bool... (and rename it)
-        rob_index_corresponds_to_in_order_idling_point: bool = False
+        pc_br, _, _ = k.STT.rob[e.rob_index]
 
-        if rob_index_corresponds_to_in_order_idling_point:
+        STT_squashed_to_idling_point: bool = pc_br == k.in_order.pc
+
+        if STT_squashed_to_idling_point:
             new_k.mispredicted = False
+            new_k.doomed.doomed = {} # doomed now maps all PRegIDs to false
 
     if k.mispredicted and e.name in M_Event_Type.Fetch_Events:
         if e.name is M_Event_Name.FETCH_ARITHMETIC or e.name is M_Event_Name.FETCH_LOAD:
@@ -65,16 +80,9 @@ def perform(k: State_Extended, e: M_Event, t: int) -> State_Extended:
 
           if STT.tainted(k.STT, x):
             new_k.doomed[x] = True
-    
-    elif e.name is M_Event_Name.EXECUTE_BRANCH_FAIL:
-        if rob_index_corresponds_to_in_order_idling_point:
-            new_k.doomed.doomed = {} # doomed now maps all PRegIDs to false
 
     return new_k
 
-# TODO: define Extended_STT_Processor(...) and Extended_STT_Logic(...)
-#   - Should just be a direct copy of the functions from STT.py but using the new definiton of perform and so passing an Extended State around etc.
-#       -> The coordination of the STT and InO processors is handled by the new perform() function (InO executes only on non-transient fetches)
 STT_init: State_STT = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],Taint({},{},{}),0)
 InO_init: State_InO = State_InO(0,{},{})
 Extended_init: State_Extended = State_Extended(STT_init, InO_init, False, Doomed({}))
@@ -88,26 +96,28 @@ def Extended_Processor(P: Program) -> None:
         k, halt = Extended_Logic(P, k, t)
         t += 1
 
+    print(f"End State, k = (STT, in_order, _, _):\n{k.STT}\n\n{k.in_order}")
+
 def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extended, bool]:
     k_snapshot: State_Extended = deepcopy(k)
 
-    print(k)
-    print(k.STT)
-    print(k.in_order)
+    #print(k)
+    #print(k.STT)
+    #print(k.in_order)
 
-    for i in range(1, COMMIT_WIDTH):
-        if k.STT.rob.head == k.STT.rob.tail():
+    for i in range(1, COMMIT_WIDTH+1):
+        if k.STT.rob.tail == 0 or k.STT.rob.head == k.STT.rob.tail:
             break
 
-        _, instruction, _ = k.STT.rob.seq[k.STT.rob.head]
+        _, instruction, _ = k.STT.rob[k.STT.rob.head]
         e: M_Event = commit_event(instruction)
         if enabled(k, e, t):
             k = perform(k, e, t)
-            print(f"\nafter commit: {k}\n{k.STT}")
+            #print(f"\nafter commit: {k}\n{k.STT}")
         else:
             break
 
-    for i in range(1, FETCH_WIDTH):
+    for i in range(1, FETCH_WIDTH+1):
         if P[k.STT.pc] is None:
             break
         instruction = P[k.STT.pc]
@@ -117,24 +127,25 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
         k.STT.T = Taint(new_yrot, new_rt_YRoT, new_rt_LL)
 
         k = perform(k, e, t)
-        print(f"\nafter fetch: {k}\n{k.STT}")
+        #print(f"\nafter fetch: {k}\n{k.STT}")
         if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
             break
 
-    for i in range(k.STT.rob.head, k.STT.rob.tail() - 1): # TODO: spec suggests this should be `tail - 1`
-        _, instruction, _ = k.STT.rob.seq[i]
+    for i in range(k.STT.rob.head, k.STT.rob.tail):
+        _, instruction, _ = k.STT.rob[i]
         e: M_Event = execute_event(k.STT, i)
+        e.instruction = instruction
 
         if enabled(k, e, t) and ready(k_snapshot, e, t) and not delayed(k_snapshot, e, t):
             k = perform(k, e, t)
-            print(f"\nafter execute: {k}\n{k.STT}")
+            #print(f"\nafter execute: {k}\n{k.STT}")
             if e.name is M_Event_Name.EXECUTE_BRANCH_FAIL:
                 break
 
     k.STT = STT.untaint(k.STT)
 
-    halt: bool = P[k.STT.pc] is None and k.STT.rob.head == k.STT.rob.tail()
+    halt: bool = P[k.STT.pc] is None and k.STT.rob.head == k.STT.rob.tail
 
     return tuple([k, halt])
 
-example_program: Program = STT_program.speculative_load
+example_program: Program = STT_program.loop
