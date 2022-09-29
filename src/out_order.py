@@ -35,6 +35,13 @@ class ReorderBuffer:
         self.seq = seq
         self.head = head
 
+    def __getitem__(self, index: int) -> Tuple[int, Instruction, bool]:
+        return self.seq[index]
+
+    def __setitem__(self, index: int, entry: Tuple[int, Instruction, bool]) -> None:
+        self.seq[index] = entry
+
+    @property
     def tail(self):
         return len(self.seq)
 
@@ -224,7 +231,7 @@ def taint(state: State_OutO, static_instruction: Instruction) -> Dict:
 
             x_d: int = dynamic_instruction.operands[0]
 
-            new_taint[x_d] = underSpec(state.ckpt, state.rob.tail()) # underSpec(σ.ckpt, σ.rob_tail)
+            new_taint[x_d] = underSpec(state.ckpt, state.rob.tail) # underSpec(σ.ckpt, σ.rob_tail)
 
             return new_taint
 
@@ -235,7 +242,7 @@ def taint(state: State_OutO, static_instruction: Instruction) -> Dict:
 # TODO: change if taint implementation changes
 def noTaintedInputs(state: State_OutO, i: int) -> bool:
     # TODO: bounds check?
-    instruction: Instruction = state.rob.seq[i][1]
+    instruction: Instruction = state.rob[i][1]
     tainted: Dict = state.T
 
     match instruction.name:
@@ -268,7 +275,7 @@ def noTaintedInputs(state: State_OutO, i: int) -> bool:
 
 # TODO: change if taint implementation changes
 def untaintInstr(state: State_OutO, i: int) -> Dict:
-    instruction: Instruction = state.rob.seq[i][1]
+    instruction: Instruction = state.rob[i][1]
 
     x_d: int = instruction.operands[0]
 
@@ -292,7 +299,7 @@ def untaintInstr(state: State_OutO, i: int) -> Dict:
 def untaint(state: State_OutO) -> State_OutO:
     new_state = deepcopy(state)
 
-    for i in range(state.rob.head, state.rob.tail()-1): # 'for i from σ.rob_head to σ.rob_tail − 1 do...'
+    for i in range(state.rob.head, state.rob.tail-1): # 'for i from σ.rob_head to σ.rob_tail − 1 do...'
         new_state.T = untaintInstr(new_state, i)
     
     return new_state
@@ -350,7 +357,7 @@ def fetch_branch(state: State_OutO, static_instruction: Instruction):
 
     new_pc = spc if b else state.pc + 1
 
-    new_ckpt = tuple([state.rob.tail(), state.pc, state.rt]) # "newCkpt = (rob_tail, pc, rt)"
+    new_ckpt = tuple([state.rob.tail, state.pc, state.rt]) # "newCkpt = (rob_tail, pc, rt)"
 
     new_state.pc = new_pc
 
@@ -397,7 +404,7 @@ def fetch_store(state: State_OutO, static_instruction: Instruction):
     rob_entry = tuple([state.pc, dynamic_instruction, None])
     new_state.rob.seq.append(rob_entry)
 
-    new_state.sq.append(state.rob.tail()) #  "sq ++ [rob_tail]"
+    new_state.sq.append(state.rob.tail) #  "sq ++ [rob_tail]"
 
     return new_state
 
@@ -408,7 +415,7 @@ def fetch_store(state: State_OutO, static_instruction: Instruction):
 def StoresAreReady(state: State_OutO, rob_i: int) -> bool:
     for rob_j in state.sq:
         if rob_j < rob_i:
-            _, older_store, _ = state.rob.seq[rob_j]
+            _, older_store, _ = state.rob[rob_j]
 
             assert(older_store.name == Instruction_Name.STORE)
 
@@ -423,7 +430,7 @@ def CanForward(state: State_OutO, rob_i: int, x_a: int, rob_j: int, x_v: int) ->
     in_store_queue: bool = rob_j in state.sq
     is_younger: bool = rob_j < rob_i
 
-    _, dynamic_instruction, _ = state.rob.seq[rob_j]
+    _, dynamic_instruction, _ = state.rob[rob_j]
 
     assert(dynamic_instruction.name == Instruction_Name.STORE)
 
@@ -436,7 +443,7 @@ def CanForward(state: State_OutO, rob_i: int, x_a: int, rob_j: int, x_v: int) ->
     no_younger_stores: bool = True
     for rob_k in state.sq:
         if rob_j < rob_k < rob_i:
-            _, younger_instruction, _ = state.rob.seq[rob_k]
+            _, younger_instruction, _ = state.rob[rob_k]
 
             k_v: int = younger_instruction.operands[1]
 
@@ -450,7 +457,7 @@ def CanForward(state: State_OutO, rob_i: int, x_a: int, rob_j: int, x_v: int) ->
 def loadResult(state: State_OutO, rob_i: int, x_a: int, oldRes: int) -> int:
     for rob_j in state.sq:
         if rob_j < rob_i:
-            _, dynamic_instruction, _ = state.rob.seq[rob_j]
+            _, dynamic_instruction, _ = state.rob[rob_j]
 
             x_v: int = dynamic_instruction.operands[1]
 
@@ -472,7 +479,7 @@ def execute_immediate(state: State_OutO, rob_index: int) -> State_OutO:
 
     new_state = deepcopy(state)
 
-    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+    _, dynamic_instruction, _ = state.rob[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
     k: int = dynamic_instruction.operands[1]
@@ -483,7 +490,7 @@ def execute_immediate(state: State_OutO, rob_index: int) -> State_OutO:
     return new_state
 
 def enabled_execute_immediate(state: State_OutO, rob_index: int) -> bool:
-    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+    _, dynamic_instruction, _ = state.rob[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
 
@@ -497,7 +504,7 @@ def execute_arithmetic(state: State_OutO, rob_index: int) -> State_OutO:
 
     new_state = deepcopy(state)
 
-    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+    _, dynamic_instruction, _ = state.rob[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
     x_a: int = dynamic_instruction.operands[1]
@@ -510,7 +517,7 @@ def execute_arithmetic(state: State_OutO, rob_index: int) -> State_OutO:
     return new_state
 
 def enabled_execute_arithmetic(state: State_OutO, rob_index: int) -> bool:
-    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+    _, dynamic_instruction, _ = state.rob[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
     x_a: int = dynamic_instruction.operands[1]
@@ -530,7 +537,7 @@ def execute_branch_success(state: State_OutO, rob_index: int) -> State_OutO:
 
     new_state = deepcopy(state)
 
-    origin_pc, dynamic_instruction, _ = state.rob.seq[rob_index]
+    origin_pc, dynamic_instruction, _ = state.rob[rob_index]
 
     x_c: int = dynamic_instruction.operands[0]
     x_d: int = dynamic_instruction.operands[1]
@@ -543,7 +550,7 @@ def execute_branch_success(state: State_OutO, rob_index: int) -> State_OutO:
     return new_state
 
 def enabled_execute_branch_success(state: State_OutO, rob_index: int) -> bool:
-    _, dynamic_instruction, branch_prediction = state.rob.seq[rob_index]
+    _, dynamic_instruction, branch_prediction = state.rob[rob_index]
     spc, b = branch_prediction
 
     x_c: int = dynamic_instruction.operands[0]
@@ -570,7 +577,7 @@ def execute_branch_fail(state: State_OutO, rob_index: int) -> State_OutO:
 
     new_state = deepcopy(state)
 
-    origin_pc, dynamic_instruction, _ = state.rob.seq[rob_index]
+    origin_pc, dynamic_instruction, _ = state.rob[rob_index]
 
     x_c: int = dynamic_instruction.operands[0]
     x_d: int = dynamic_instruction.operands[1]
@@ -590,7 +597,7 @@ def execute_branch_fail(state: State_OutO, rob_index: int) -> State_OutO:
     new_rt = rollback_ckpt[2]
     new_state.rt = new_rt
 
-    new_rob_seq = state.rob.seq[:rob_index]
+    new_rob_seq = state.rob[:rob_index]
     new_state.rob.seq = new_rob_seq
 
     new_lq = [ queued_load for queued_load in state.lq if queued_load[0] < rob_index ]
@@ -608,7 +615,7 @@ def execute_branch_fail(state: State_OutO, rob_index: int) -> State_OutO:
     return new_state
 
 def enabled_execute_branch_fail(state: State_OutO, rob_index: int) -> bool:
-    origin_pc, dynamic_instruction, branch_prediction = state.rob.seq[rob_index]
+    origin_pc, dynamic_instruction, branch_prediction = state.rob[rob_index]
     spc, b = branch_prediction
 
     x_c: int = dynamic_instruction.operands[0]
@@ -640,7 +647,7 @@ def execute_load_begin_get_s(state: State_OutO, rob_index: int, t: int) -> State
 
     new_state = deepcopy(state)
 
-    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+    _, dynamic_instruction, _ = state.rob[rob_index]
 
     x_a: int = dynamic_instruction.operands[1]
 
@@ -673,7 +680,7 @@ def execute_load_begin_get_s(state: State_OutO, rob_index: int, t: int) -> State
     return new_state
 
 def enabled_execute_load_begin_get_s(state: State_OutO, rob_index: int) -> bool:
-    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+    _, dynamic_instruction, _ = state.rob[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
     x_a: int = dynamic_instruction.operands[1]
@@ -692,7 +699,7 @@ def execute_load_end_get_s(state: State_OutO, rob_index: int, t: int) -> State_O
 
     new_state = deepcopy(state)
 
-    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+    _, dynamic_instruction, _ = state.rob[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
     x_a: int = dynamic_instruction.operands[1]
@@ -739,7 +746,7 @@ def execute_load_complete(state: State_OutO, rob_index: int) -> State_OutO:
 
     new_state = deepcopy(state)
 
-    _, dynamic_instruction, _ = state.rob.seq[rob_index]
+    _, dynamic_instruction, _ = state.rob[rob_index]
 
     x_d: int = dynamic_instruction.operands[0]
     x_a: int = dynamic_instruction.operands[1]
@@ -774,7 +781,7 @@ def commit_immediate(state: State_OutO) -> State_OutO:
     return new_state
 
 def enabled_commit_immediate(state: State_OutO) -> bool:
-    _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
+    _, dynamic_instruction, _ = state.rob[state.rob.head]
 
     x_d: int = dynamic_instruction.operands[0]
 
@@ -793,7 +800,7 @@ def commit_arithmetic(state: State_OutO) -> State_OutO:
     return new_state
 
 def enabled_commit_arithmetic(state: State_OutO) -> bool:
-    _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
+    _, dynamic_instruction, _ = state.rob[state.rob.head]
 
     x_d: int = dynamic_instruction.operands[0]
 
@@ -831,7 +838,7 @@ def commit_load(state: State_OutO) -> State_OutO:
     return new_state
 
 def enabled_commit_load(state: State_OutO) -> bool:
-    _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
+    _, dynamic_instruction, _ = state.rob[state.rob.head]
 
     x_d: int = dynamic_instruction.operands[0]
 
@@ -845,7 +852,7 @@ def commit_store(state: State_OutO) -> State_OutO:
 
     new_state = deepcopy(state)
 
-    _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
+    _, dynamic_instruction, _ = state.rob[state.rob.head]
 
     x_a: int = dynamic_instruction.operands[0]
     x_v: int = dynamic_instruction.operands[1]
@@ -861,7 +868,7 @@ def commit_store(state: State_OutO) -> State_OutO:
     return new_state
 
 def enabled_commit_store(state: State_OutO) -> bool:
-    _, dynamic_instruction, _ = state.rob.seq[state.rob.head]
+    _, dynamic_instruction, _ = state.rob[state.rob.head]
 
     x_a: int = dynamic_instruction.operands[0]
     x_v: int = dynamic_instruction.operands[1]
@@ -1019,7 +1026,7 @@ def fetch_event(instruction: Instruction) -> M_Event:
     return M_Event(name=event_name, rob_index=None, instruction=instruction)
 
 def execute_event(state: State_OutO, rob_index: int) -> M_Event:
-    _, instruction, _ = state.rob.seq[rob_index]
+    _, instruction, _ = state.rob[rob_index]
 
     event_name: M_Event_Name = None
 
@@ -1095,25 +1102,25 @@ def ready(state: State_OutO, execute_event: M_Event, t: int) -> bool:
             return True
 
         case M_Event_Name.EXECUTE_ARITHMETIC:
-            _, dynamic_instruction, _ = state.rob.seq[execute_event.rob_index]
+            _, dynamic_instruction, _ = state.rob[execute_event.rob_index]
             operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
             
             return operands_ready[1] and operands_ready[2]
 
         case M_Event_Name.EXECUTE_BRANCH_SUCCESS:
-            _, dynamic_instruction, _ = state.rob.seq[execute_event.rob_index]
+            _, dynamic_instruction, _ = state.rob[execute_event.rob_index]
             operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
 
             return operands_ready[0] and operands_ready[1]
 
         case M_Event_Name.EXECUTE_BRANCH_FAIL:
-            _, dynamic_instruction, _ = state.rob.seq[execute_event.rob_index]
+            _, dynamic_instruction, _ = state.rob[execute_event.rob_index]
             operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
 
             return operands_ready[0] and operands_ready[1]
 
         case M_Event_Name.EXECUTE_LOAD_BEGIN_GET_S:
-            _, dynamic_instruction, _ = state.rob.seq[execute_event.rob_index]
+            _, dynamic_instruction, _ = state.rob[execute_event.rob_index]
             operands_ready = [ True if state.ready[op] else False for op in dynamic_instruction.operands ]
 
             return operands_ready[1]
@@ -1152,9 +1159,9 @@ def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]
 
     print("\n\t[commit]\n")
     for i in range(1, COMMIT_WIDTH):
-        if state.rob.head == state.rob.tail():
+        if state.rob.head == state.rob.tail:
             break
-        instruction: Instruction = state.rob.seq[state.rob.head][1]
+        instruction: Instruction = state.rob[state.rob.head][1]
         e: M_Event = commit_event(instruction)
         if enabled(state, e, t):
             print("\t - committing " + str(instruction.name.name) + "" + str(instruction.operands))
@@ -1181,8 +1188,8 @@ def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]
     #print(state)
     
     print("\n\t[execute]\n")
-    for i in range(state.rob.head, state_snapshot.rob.tail()): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
-        instruction: Instruction = state.rob.seq[i][1]
+    for i in range(state.rob.head, state_snapshot.rob.tail): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
+        instruction: Instruction = state.rob[i][1]
         e: M_Event = execute_event(state, i)
         if enabled(state, e, t) and ready(state_snapshot, e, t): # and not delayed(state_snapshot, e, t): # TODO: add this once delayed is implemented
             print("\t - executing " + str(instruction.name.name) + " " + str(instruction.operands))
@@ -1199,6 +1206,6 @@ def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]
     print('\n')
     print(state)
 
-    halt: bool = P[state.pc] is None and state.rob.head == state.rob.tail() # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
+    halt: bool = P[state.pc] is None and state.rob.head == state.rob.tail # "(P [σ.pc] = ⊥) ∧ (σ.rob_head = σ.rob_tail)"
 
     return tuple([state, halt])
