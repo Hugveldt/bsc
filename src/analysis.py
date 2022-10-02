@@ -2,7 +2,7 @@ from copy import deepcopy
 from typing import Dict, Tuple
 from in_order import InO_Processor, State_InO
 from STT import COMMIT_WIDTH, FETCH_WIDTH, ReorderBuffer, State_STT, M_Event, M_Event_Name, M_Event_Type, BrPr, Taint, commit_event, execute_event, fetch_event
-from STT_program import Instruction, Program
+from STT_program import Dynamic_Instruction, Program
 import in_order
 import STT
 import STT_program
@@ -150,16 +150,13 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
 
 example_program: Program = STT_program.loop
 
-# TODO: Need to somehow account for the fact that the instructions in the rob have renamed registers
-# |--> "(note that all such mappings are logged in dynamic instructions in the reorder buffer and thus can be recovered from σ)"
-#    |--> need to either implement this or something equivalent
 # TODO: program counter is also different as a result of incorrect branches. This must be a bug - pc should revert when squashing?
 # Definition 5
 def is_committed_state(in_order: State_InO, STT: State_STT, InO_init: State_InO) -> bool:
     """An in-order processor state Σ ∈ StateInO is the committed state for a STT processor state σ ∈ StateSTT, written σ ∼ Σ, if Σ is the result of executing a sequence of instructions corresponding to entries in the reorder buffer σ.rob[0], σ.rob[1], . . . , σ.rob[robhead - 1] from the initial state Σ_init."""
     init: State_InO = deepcopy(InO_init)
 
-    committed_instructions: Program = [ instruction for _, instruction, _ in STT.rob.seq[:STT.rob.head] ]
+    committed_instructions: Program = [ instruction.static_instruction for _, instruction, _ in STT.rob.seq[:STT.rob.head] ]
     committed_instructions.append(None)
 
     P_result: State_InO = InO_Processor(committed_instructions, init)

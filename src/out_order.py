@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, TypeAlias
 from enum import Enum, auto
 from copy import deepcopy
-from STT_program import Instruction_Name, Instruction, Program, random_program, print_program
+from STT_program import Instruction_Name, Static_Instruction, Dynamic_Instruction, Program, random_program, print_program
 import STT_program
 
 # abstract branch predictor
@@ -31,14 +31,14 @@ class BrPr:
         return tuple([spc, b])
 
 class ReorderBuffer:
-    def __init__(self, seq: List[Tuple[int, Instruction, bool]], head: int):
+    def __init__(self, seq: List[Tuple[int, Dynamic_Instruction, bool]], head: int):
         self.seq = seq
         self.head = head
 
-    def __getitem__(self, index: int) -> Tuple[int, Instruction, bool]:
+    def __getitem__(self, index: int) -> Tuple[int, Dynamic_Instruction, bool]:
         return self.seq[index]
 
-    def __setitem__(self, index: int, entry: Tuple[int, Instruction, bool]) -> None:
+    def __setitem__(self, index: int, entry: Tuple[int, Dynamic_Instruction, bool]) -> None:
         self.seq[index] = entry
 
     @property
@@ -111,7 +111,7 @@ class State_OutO:
 
 
 # TODO: need to decide whether or not static and dynamic instructions should be different classes
-def rename(state: State_OutO, static_instruction: Instruction) -> Tuple[Dict, Instruction]:
+def rename(state: State_OutO, static_instruction: Static_Instruction) -> Tuple[Dict, Dynamic_Instruction]:
     match static_instruction.name:
         case Instruction_Name.IMMED:
             # deepcopy to avoid changing the original renaming table
@@ -125,7 +125,7 @@ def rename(state: State_OutO, static_instruction: Instruction) -> Tuple[Dict, In
             new_rt[r_d] = x_d
 
             # create a new 'dynamic' instruction with the new physical register as it's first operand
-            dynamic_instruction: Instruction = Instruction(Instruction_Name.IMMED, [x_d, k])
+            dynamic_instruction: Dynamic_Instruction = Dynamic_Instruction(static_instruction, Instruction_Name.IMMED, [x_d, k])
             
             return (new_rt, dynamic_instruction)
 
@@ -143,7 +143,7 @@ def rename(state: State_OutO, static_instruction: Instruction) -> Tuple[Dict, In
             x_a: int = state.rt[r_a]
             x_b: int = state.rt[r_b]
 
-            dynamic_instruction: Instruction = Instruction(Instruction_Name.OP, [x_d, x_a, x_b])
+            dynamic_instruction: Dynamic_Instruction = Dynamic_Instruction(static_instruction, Instruction_Name.OP, [x_d, x_a, x_b])
 
             return (new_rt, dynamic_instruction)
 
@@ -157,7 +157,7 @@ def rename(state: State_OutO, static_instruction: Instruction) -> Tuple[Dict, In
             x_c: int = state.rt[r_c]
             x_d: int = state.rt[r_d]
 
-            dynamic_instruction: Instruction = Instruction(Instruction_Name.BRANCH, [x_c, x_d])
+            dynamic_instruction: Dynamic_Instruction = Dynamic_Instruction(static_instruction, Instruction_Name.BRANCH, [x_c, x_d])
 
             return (rt_copy, dynamic_instruction)
 
@@ -172,7 +172,7 @@ def rename(state: State_OutO, static_instruction: Instruction) -> Tuple[Dict, In
 
             x_a: int = state.rt[r_a]
 
-            dynamic_instruction: Instruction = Instruction(Instruction_Name.LOAD, [x_d, x_a])
+            dynamic_instruction: Dynamic_Instruction = Dynamic_Instruction(static_instruction, Instruction_Name.LOAD, [x_d, x_a])
 
             return (new_rt, dynamic_instruction)
 
@@ -186,7 +186,7 @@ def rename(state: State_OutO, static_instruction: Instruction) -> Tuple[Dict, In
             x_a: int = state.rt[r_a]
             x_v: int = state.rt[r_v]
 
-            dynamic_instruction: Instruction = Instruction(Instruction_Name.STORE, [x_a, x_v])
+            dynamic_instruction: Dynamic_Instruction = Dynamic_Instruction(static_instruction, Instruction_Name.STORE, [x_a, x_v])
 
             return (rt_copy, dynamic_instruction)
 
@@ -210,7 +210,7 @@ def underSpec(ckpt: List[Tuple[int, int, Dict]], i: int) -> bool:
     return False
 
 # TODO: change if taint implementation changes
-def taint(state: State_OutO, static_instruction: Instruction) -> Dict:
+def taint(state: State_OutO, static_instruction: Static_Instruction) -> Dict:
     _, dynamic_instruction = rename(state, static_instruction)
     tainted = state.T
 
@@ -242,7 +242,7 @@ def taint(state: State_OutO, static_instruction: Instruction) -> Dict:
 # TODO: change if taint implementation changes
 def noTaintedInputs(state: State_OutO, i: int) -> bool:
     # TODO: bounds check?
-    instruction: Instruction = state.rob[i][1]
+    instruction: Dynamic_Instruction = state.rob[i][1]
     tainted: Dict = state.T
 
     match instruction.name:
@@ -275,7 +275,7 @@ def noTaintedInputs(state: State_OutO, i: int) -> bool:
 
 # TODO: change if taint implementation changes
 def untaintInstr(state: State_OutO, i: int) -> Dict:
-    instruction: Instruction = state.rob[i][1]
+    instruction: Dynamic_Instruction = state.rob[i][1]
 
     x_d: int = instruction.operands[0]
 
@@ -308,7 +308,7 @@ def untaint(state: State_OutO) -> State_OutO:
 
 ### fetch events
 
-def fetch_immediate(state: State_OutO, static_instruction: Instruction) -> State_OutO:
+def fetch_immediate(state: State_OutO, static_instruction: Static_Instruction) -> State_OutO:
     new_state = deepcopy(state)
 
     new_rt, dynamic_instruction = rename(new_state, static_instruction)
@@ -327,7 +327,7 @@ def fetch_immediate(state: State_OutO, static_instruction: Instruction) -> State
 
     return new_state
 
-def fetch_arithmetic(state: State_OutO, static_instruction: Instruction):
+def fetch_arithmetic(state: State_OutO, static_instruction: Static_Instruction):
     new_state = deepcopy(state)
 
     new_rt, dynamic_instruction = rename(new_state, static_instruction)
@@ -346,7 +346,7 @@ def fetch_arithmetic(state: State_OutO, static_instruction: Instruction):
 
     return new_state
 
-def fetch_branch(state: State_OutO, static_instruction: Instruction):
+def fetch_branch(state: State_OutO, static_instruction: Static_Instruction):
     new_state = deepcopy(state)
 
     new_rt, dynamic_instruction = rename(new_state, static_instruction)
@@ -373,7 +373,7 @@ def fetch_branch(state: State_OutO, static_instruction: Instruction):
 
     return new_state
 
-def fetch_load(state: State_OutO, static_instruction: Instruction):
+def fetch_load(state: State_OutO, static_instruction: Static_Instruction):
     new_state = deepcopy(state)
 
     new_rt, dynamic_instruction = rename(new_state, static_instruction)
@@ -392,7 +392,7 @@ def fetch_load(state: State_OutO, static_instruction: Instruction):
 
     return new_state
 
-def fetch_store(state: State_OutO, static_instruction: Instruction):
+def fetch_store(state: State_OutO, static_instruction: Static_Instruction):
     new_state = deepcopy(state)
 
     new_rt, dynamic_instruction = rename(new_state, static_instruction)
@@ -905,9 +905,9 @@ class M_Event_Name(Enum):
 class M_Event:
     name        : M_Event_Name
     rob_index   : Optional[int]
-    instruction : Optional[Instruction]
+    instruction : Optional[Dynamic_Instruction]
 
-    def __init__(self, name: M_Event_Name, rob_index: Optional[int], instruction : Optional[Instruction]):
+    def __init__(self, name: M_Event_Name, rob_index: Optional[int], instruction : Optional[Dynamic_Instruction]):
         self.name = name
         self.rob_index = rob_index
         self.instruction = instruction
@@ -1008,7 +1008,7 @@ def enabled(state: State_OutO, event: M_Event, t: int) -> bool:
         case _:
             return True # fetch events are always enabled
 
-def fetch_event(instruction: Instruction) -> M_Event:
+def fetch_event(instruction: Dynamic_Instruction) -> M_Event:
     event_name: M_Event_Name = None
 
     match instruction.name:
@@ -1065,7 +1065,7 @@ def execute_event(state: State_OutO, rob_index: int) -> M_Event:
 
     return M_Event(name=event_name, rob_index=rob_index, instruction=None)
 
-def commit_event(instruction: Instruction) -> M_Event:
+def commit_event(instruction: Dynamic_Instruction) -> M_Event:
     event_name: M_Event_Name = None
 
     match instruction.name:
@@ -1161,7 +1161,7 @@ def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]
     for i in range(1, COMMIT_WIDTH):
         if state.rob.head == state.rob.tail:
             break
-        instruction: Instruction = state.rob[state.rob.head][1]
+        instruction: Dynamic_Instruction = state.rob[state.rob.head][1]
         e: M_Event = commit_event(instruction)
         if enabled(state, e, t):
             print("\t - committing " + str(instruction.name.name) + "" + str(instruction.operands))
@@ -1176,7 +1176,7 @@ def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]
     for i in range(1, FETCH_WIDTH):
         if P[state.pc] is None:
             break # don't try and fetch beyond the end of the file
-        instruction: Instruction = P[state.pc]
+        instruction: Dynamic_Instruction = P[state.pc]
         e: M_Event = fetch_event(instruction)
         # state.T = taint(state, instruction)
         print("\t - fetching the " + str(instruction.name.name) + " on line " + str(state.pc))
@@ -1189,7 +1189,7 @@ def OutO_Logic(P: Program, state: State_OutO, t: int) -> Tuple[State_OutO, bool]
     
     print("\n\t[execute]\n")
     for i in range(state.rob.head, state_snapshot.rob.tail): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
-        instruction: Instruction = state.rob[i][1]
+        instruction: Dynamic_Instruction = state.rob[i][1]
         e: M_Event = execute_event(state, i)
         if enabled(state, e, t) and ready(state_snapshot, e, t): # and not delayed(state_snapshot, e, t): # TODO: add this once delayed is implemented
             print("\t - executing " + str(instruction.name.name) + " " + str(instruction.operands))
