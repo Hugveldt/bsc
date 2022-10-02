@@ -104,7 +104,6 @@ class State_STT:
         s += f'\n\tbranch checkpoints: {self.ckpt}'
         s += f'\n\tcache: {self.C}'
         s += f'\n\ttaint:\n\t\tyrot: {self.T.yrot}\n\t\trt_YRoT: {self.T.rt_YRoT}\n\t\trt_LL: {self.T.rt_LL}'
-        s += f'\n---------------------------'
 
         return s
 
@@ -1152,7 +1151,7 @@ def delayed(state: State_STT, e: M_Event, t: int) -> bool:
 example_program: Program = STT_program.loop
 
 state_init = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],Taint({},{},{}),0)
-def STT_Processor(P: Program) -> None:
+def STT_Processor(P: Program) -> State_STT:
     state = state_init
 
     # DEBUG #
@@ -1166,9 +1165,7 @@ def STT_Processor(P: Program) -> None:
         state, halt = STT_Logic(P, state, t)
         t += 1
 
-    # DEBUG #
-    #print(f"[End State] - timestep {t}\n")
-    #print(state)
+    return state
 
 COMMIT_WIDTH: int = 2
 FETCH_WIDTH: int = 2

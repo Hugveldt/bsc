@@ -9,7 +9,7 @@ class State_InO:
         self.reg = reg
 
     def __str__(self):
-        return f'State_InO(\n\tpc: {self.pc}\n\tmem: {self.mem}\n\treg: {self.reg}\n)'
+        return f'---- State_InO ------------\n\tpc: {self.pc}\n\tmem: {self.mem}\n\treg: {self.reg}\n)'
 
 example_program: Program = [
     Instruction(Instruction_Name.IMMED,  [0, 10]),
@@ -76,8 +76,7 @@ def InO_Logic(P: Program, state: State_InO, t: int) -> Tuple[State_InO, bool]:
     new_state = perform(state, e, t)
     return (new_state, False)
 
-state_init = State_InO(0, {}, {})
-def InO_Processor(P: Program):
+def InO_Processor(P: Program, state_init: State_InO) -> State_InO:
     state = state_init
     t = 0
     halt = False
@@ -87,3 +86,5 @@ def InO_Processor(P: Program):
         print(state)
         ###
         t += 1
+    
+    return state
