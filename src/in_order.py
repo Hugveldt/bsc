@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from copy import deepcopy
 from typing import Dict, List, Tuple
 from STT_program import Instruction_Name, Program, Static_Instruction
@@ -10,6 +12,14 @@ class State_InO:
 
     def __str__(self):
         return f'---- State_InO ------------\n\tpc: {self.pc}\n\tmem: {self.mem}\n\treg: {self.reg}\n)'
+
+    def __ne__(self: State_InO, other: State_InO):
+        equal_pc : bool = self.pc  == other.pc
+        equal_mem: bool = self.mem == other.mem
+        equal_reg: bool = self.reg == other.reg
+
+        return not equal_pc or not equal_mem or not equal_reg
+
 
 example_program: Program = [
     Static_Instruction(Instruction_Name.IMMED,  [0, 10]),
