@@ -1,8 +1,8 @@
 from copy import deepcopy
 from typing import Dict, Tuple
 from in_order import InO_Processor, State_InO
-from STT import COMMIT_WIDTH, FETCH_WIDTH, ReorderBuffer, State_STT, M_Event, M_Event_Name, M_Event_Type, BrPr, Taint, commit_event, execute_event, fetch_event
-from STT_program import Dynamic_Instruction, Program
+from STT import COMMIT_WIDTH, FETCH_WIDTH, ReorderBuffer, State_STT, M_Event, M_Event_Name, M_Event_Type, BrPr, Taint, commit_event, execute_event, fetch_event, tainted, underSpec
+from STT_program import Dynamic_Instruction, Instruction_Name, Program, print_program
 import in_order
 import STT
 import STT_program
@@ -74,7 +74,7 @@ def perform(k: State_Extended, e: M_Event, t: int) -> State_Extended:
             new_k.doomed.doomed = {} # doomed now maps all PRegIDs to false
 
     if k.mispredicted and e.name in M_Event_Type.Fetch_Events:
-        if e.name is M_Event_Name.FETCH_ARITHMETIC or e.name is M_Event_Name.FETCH_LOAD:
+        if e.name in [M_Event_Name.FETCH_ARITHMETIC, M_Event_Name.FETCH_LOAD]:
           x: int = e.instruction.operands[0]
           k.STT.T =  STT.taint(k.STT, e.instruction)
 
@@ -86,7 +86,7 @@ def perform(k: State_Extended, e: M_Event, t: int) -> State_Extended:
 STT_init: State_STT = State_STT(0,{},{},{},{},ReorderBuffer([],0),[],[],BrPr(),[],[],Taint({},{},{}),0)
 InO_init: State_InO = State_InO(0,{},{})
 Extended_init: State_Extended = State_Extended(STT_init, InO_init, False, Doomed({}))
-def Extended_Processor(P: Program) -> None:
+def Extended_Processor(P: Program) -> State_Extended:
     k: State_Extended = Extended_init
 
     t = 0
@@ -97,6 +97,8 @@ def Extended_Processor(P: Program) -> None:
         t += 1
 
     print(f"End State, k = (STT, in_order, mispredicted, doomed):\n{k.STT}\n\n{k.in_order}\n\n---- Mispredicted ---------\n\t{k.mispredicted}\n\n---- Doomed ---------------\n\t{k.doomed.doomed}\n\n---------------------------")
+
+    return k
 
 def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extended, bool]:
     k_snapshot: State_Extended = deepcopy(k)
@@ -150,7 +152,8 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
 
 example_program: Program = STT_program.loop
 
-# TODO: program counter is also different as a result of incorrect branches. This must be a bug - pc should revert when squashing?
+# TODO: The program counter won't match if there are any branch instructions as they're not represented in the ROB
+# ... meaning that the committed instructions are equivalent to a program without branches
 # Definition 5
 def is_committed_state(in_order: State_InO, STT: State_STT, InO_init: State_InO) -> bool:
     """An in-order processor state Σ ∈ StateInO is the committed state for a STT processor state σ ∈ StateSTT, written σ ∼ Σ, if Σ is the result of executing a sequence of instructions corresponding to entries in the reorder buffer σ.rob[0], σ.rob[1], . . . , σ.rob[robhead - 1] from the initial state Σ_init."""
@@ -159,7 +162,74 @@ def is_committed_state(in_order: State_InO, STT: State_STT, InO_init: State_InO)
     committed_instructions: Program = [ instruction.static_instruction for _, instruction, _ in STT.rob.seq[:STT.rob.head] ]
     committed_instructions.append(None)
 
+    print("\n\n -- converted committed instructions to the following program:")
+    print_program(committed_instructions)
+    print("\n\n")
+
     P_result: State_InO = InO_Processor(committed_instructions, init)
 
     return in_order == P_result
 
+# Definition 6
+def sim(P: Program, STT: State_STT, in_order: State_InO) -> bool:
+
+    # (a) σ ∼ Σ
+    # TODO: is the choice of initial state arbitrary? 
+    def6_a: bool = is_committed_state(in_order, STT, State_InO(0,{},{}))
+
+    # (b) if the execution of P terminated on the STT processor in σ, then so did the in-order processor in Σ, and otherwise...
+    # TODO: implement this somehow
+    def6_b: bool = None
+
+    # (c) for every STT processor state σ′ and for every STT transition that advances the state from σ to σ′, there exists an in-order processor state Σ′ (possibly equal to Σ) and zero or more transitions of the in-order processor advancing Σ to Σ′ so that sim(P, σ′, Σ′).
+    # TODO: implement this somehow
+    def6_c: bool = None
+
+    def6: bool = def6_a and (def6_b or def6_c)
+
+    return def6
+
+# Definition 7
+# NOTE: could maybe compare to values of k.doomed to check correctness of "When the extended processor updates the state according to the rules above, it ensures the following property formalizing the intuitive definition of doomed:"
+def doomed(k: State_Extended, x: int) -> bool:
+    if not k.mispredicted or not tainted(k.STT, x):
+        return False
+
+    for i in range(k.STT.rob.head, k.STT.rob.tail):
+        _, dynamic_instruction, _ = k.STT.rob[i]
+
+        if dynamic_instruction.name in [Instruction_Name.OP, Instruction_Name.LOAD] and x == dynamic_instruction.operands[0] and underSpec(k.STT.ckpt, i):
+            return True
+
+    return False
+
+# Definition 8
+def low_equivalent(k1: State_Extended, k2: State_Extended) -> bool:
+    if k1.doomed.doomed != k2.doomed.doomed:
+        print("Doomed registers are not equal...")
+        return False
+    
+    if k1.mispredicted != k2.mispredicted:
+        print("Mispredicted state is not equal...")
+        return False
+
+    if k1.in_order != k2.in_order:
+        print("In order states are not equal...")
+        return False
+
+    k1_non_doomed = {}
+    for PRegID in k1.STT.reg.keys():
+        if not k1.doomed[PRegID]:
+            k1_non_doomed[PRegID] = k1.STT.reg[PRegID]
+
+    k2_non_doomed = {}
+    for PRegID in k2.STT.reg.keys():
+        if not k2.doomed[PRegID]:
+            k2_non_doomed[PRegID] = k2.STT.reg[PRegID]
+
+    if k1_non_doomed == k2_non_doomed:
+        print("k1 and k2 are low equivalent!")
+        return True
+    else:
+        print("Non-doomed registers are not equal...")
+        return False
