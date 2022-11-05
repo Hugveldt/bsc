@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 from in_order import InO_Processor, State_InO
 from STT import COMMIT_WIDTH, FETCH_WIDTH, ReorderBuffer, State_STT, M_Event, M_Event_Name, M_Event_Type, BrPr, Taint, commit_event, execute_event, fetch_event, tainted, underSpec
 from STT_program import Dynamic_Instruction, Instruction_Name, Program, print_program
@@ -93,15 +93,56 @@ def Extended_Processor(P: Program) -> State_Extended:
     halt = False
 
     while not halt:
-        k, halt = Extended_Logic(P, k, t)
+        k, halt, _ = Extended_Logic(P, k, t)
         t += 1
 
     print(f"End State, k = (STT, in_order, mispredicted, doomed):\n{k.STT}\n\n{k.in_order}\n\n---- Mispredicted ---------\n\t{k.mispredicted}\n\n---- Doomed ---------------\n\t{k.doomed.doomed}\n\n---------------------------")
 
     return k
 
-def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extended, bool]:
+# TODO: finalise this
+def LIST_Extended_Processor(P: Program, K: List[State_Extended]):
+    t = 0
+    halt: List[bool] = [ False for k_i in K ]
+    traces: List[List[M_Event]] = [ [] for k_i in K ]
+
+    while not any(halt):
+        # TODO: determine and store low equivalencies between all pairs. matrix for storage?
+        # le: matrix[bool] = low_equivalent(...)
+
+        for i in range(len(K)):
+            K[i], halt[i], traces[i] = Extended_Logic(P, K[i], t)
+        
+        t += 1
+
+        # TODO:
+        # for previously low equivalent pairs of states:
+        #    test low_equivalent(k_1, k_2)
+        #    test traces[k_1] == traces[k_2]
+
+# TODO: finalise this
+def PAIR_Extended_Processor(P: Program, k_0: State_Extended, k_1: State_Extended):
+    t = 0
+    halt = [False, False]
+    traces = [[], []]
+
+    while not any(halt):
+        le: bool = low_equivalent(k_0, k_1)
+
+        k_0, halt[0], traces[0] = Extended_Logic(P, k_0, t)
+        k_1, halt[1], traces[1] = Extended_Logic(P, k_1, t)
+
+        t += 1
+
+        if le:
+            assert(low_equivalent(k_0, k_1))
+            assert(traces[0] == traces[1])
+    
+
+def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extended, bool, List[M_Event]]:
     k_snapshot: State_Extended = deepcopy(k)
+
+    m_event_trace: List[M_Event] = []
 
     #print(k)
     #print(k.STT)
@@ -115,6 +156,7 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
         e: M_Event = commit_event(instruction)
         if enabled(k, e, t):
             k = perform(k, e, t)
+            m_event_trace.append(e)
             #print(f"\nafter commit: {k}\n{k.STT}")
         else:
             break
@@ -129,6 +171,7 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
         k.STT.T = Taint(new_yrot, new_rt_YRoT, new_rt_LL)
 
         k = perform(k, e, t)
+        m_event_trace.append(e)
         #print(f"\nafter fetch: {k}\n{k.STT}")
         if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
             break
@@ -140,6 +183,7 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
 
         if enabled(k, e, t) and ready(k_snapshot, e, t) and not delayed(k_snapshot, e, t):
             k = perform(k, e, t)
+            m_event_trace.append(e)
             #print(f"\nafter execute: {k}\n{k.STT}")
             if e.name is M_Event_Name.EXECUTE_BRANCH_FAIL:
                 break
@@ -148,7 +192,7 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
 
     halt: bool = P[k.STT.pc] is None and k.STT.rob.head == k.STT.rob.tail
 
-    return tuple([k, halt])
+    return tuple([k, halt, m_event_trace])
 
 example_program: Program = STT_program.loop
 
@@ -206,7 +250,7 @@ def doomed(k: State_Extended, x: int) -> bool:
 # Definition 8
 def low_equivalent(k1: State_Extended, k2: State_Extended) -> bool:
     if k1.doomed.doomed != k2.doomed.doomed:
-        print("Doomed registers are not equal...")
+        print("Doomed states of registers are not equal...")
         return False
     
     if k1.mispredicted != k2.mispredicted:
