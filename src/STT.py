@@ -184,7 +184,7 @@ def rename(state: State_STT, static_instruction: Static_Instruction) -> Tuple[Di
             x_a: int = state.rt[r_a]
             x_v: int = state.rt[r_v]
 
-            dynamic_instruction: Dynamic_Instruction = Dynamic_Instruction(static_instruction, Instruction_Name.STORE, [x_a, x_v])
+            dynamic_instruction: Dynamic_Instruction = Dynamic_Instruction(static_instruction,Instruction_Name.STORE, [x_a, x_v])
 
             return (rt_copy, dynamic_instruction)
 
@@ -1164,6 +1164,10 @@ def STT_Processor(P: Program) -> State_STT:
         state, halt = STT_Logic(P, state, t)
         t += 1
 
+    print("\nFinal ROB:")
+    for _, dynamic_instruction, _ in state.rob.seq:
+        print(f"\t{dynamic_instruction.static_instruction}")
+
     return state
 
 COMMIT_WIDTH: int = 2
@@ -1210,8 +1214,9 @@ def STT_Logic(P: Program, state: State_STT, t: int) -> Tuple[State_STT, bool]:
         if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
             break
 
-    ##print('\n')
-    ##print(state)
+    print('\nROB after fetching:')
+    for _, dynamic_instruction, _ in state.rob.seq:
+        print(f"\t{dynamic_instruction.static_instruction}")
     
     #print("\n\t[execute]\n")
     for i in range(state.rob.head, state_snapshot.rob.tail): # "for i from σ.rob_head to σ_0.rob_tail − 1" # TODO: changing to just be to tail (as final instruction wasn't being executed). make sure thats correct
