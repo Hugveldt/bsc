@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from random import randint
+import sys
 from typing import Dict, List, Optional, Tuple
 from enum import Enum, auto
 from copy import deepcopy
@@ -698,7 +700,7 @@ def execute_load_end_get_s(state: State_STT, rob_index: int, t: int) -> State_ST
 
     assert(lq_entry is not None and lq_index is not None)
 
-    new_state.reg[x_d] = state.mem[state.reg[x_a]]
+    new_state.reg[x_d] = state.mem[state.reg[x_a]] if state.reg[x_a] in state.mem else randint(-sys.maxsize, sys.maxsize)
 
     lq_entry = list(lq_entry)
     lq_entry[1] = True # (i, False, t_end) -> (i, True, t_end)
