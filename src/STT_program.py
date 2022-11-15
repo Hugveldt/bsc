@@ -30,8 +30,6 @@ class Dynamic_Instruction:
 Program: TypeAlias = List[Static_Instruction]
 
 def random_program(min_length: int) -> Program:
-    raise Exception("random_program is likely to produce programs with out of bounds load instructions in it's current state")
-
     random.seed()
 
     program: Program = []
@@ -51,17 +49,17 @@ def random_program(min_length: int) -> Program:
                 r_d, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
-                    program.append(Dynamic_Instruction(Instruction_Name.IMMED, [r_d, k]))
+                    program.append(Static_Instruction(Instruction_Name.IMMED, [r_d, k]))
                     
                 r_a, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
-                    program.append(Dynamic_Instruction(Instruction_Name.IMMED, [r_a, k]))
+                    program.append(Static_Instruction(Instruction_Name.IMMED, [r_a, k]))
 
                 r_b, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
-                    program.append(Dynamic_Instruction(Instruction_Name.IMMED, [r_b, k]))
+                    program.append(Static_Instruction(Instruction_Name.IMMED, [r_b, k]))
 
                 operands = [r_d, r_a, r_b]
 
@@ -69,12 +67,12 @@ def random_program(min_length: int) -> Program:
                 r_c, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
-                    program.append(Dynamic_Instruction(Instruction_Name.IMMED, [r_c, k]))
+                    program.append(Static_Instruction(Instruction_Name.IMMED, [r_c, k]))
                     
                 r_d, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
-                    program.append(Dynamic_Instruction(Instruction_Name.IMMED, [r_d, k]))
+                    program.append(Static_Instruction(Instruction_Name.IMMED, [r_d, k]))
 
                 operands = [r_c, r_d]
 
@@ -84,17 +82,17 @@ def random_program(min_length: int) -> Program:
                 r_d, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
-                    program.append(Dynamic_Instruction(Instruction_Name.IMMED, [r_d, k]))
+                    program.append(Static_Instruction(Instruction_Name.IMMED, [r_d, k]))
 
                 r_a, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
-                    program.append(Dynamic_Instruction(Instruction_Name.IMMED, [r_a, k]))
+                    program.append(Static_Instruction(Instruction_Name.IMMED, [r_a, k]))
 
                 # For now this just creates matching stores immediately before every load
                 r_v, reg_is_new, registers = random_register(registers=registers, only_reuse=True)
                 assert(not reg_is_new)
-                program.append(Dynamic_Instruction(Instruction_Name.STORE, [r_a, r_v]))
+                program.append(Static_Instruction(Instruction_Name.STORE, [r_a, r_v]))
 
                 operands = [r_d, r_a]
             
@@ -102,16 +100,16 @@ def random_program(min_length: int) -> Program:
                 r_a, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
-                    program.append(Dynamic_Instruction(Instruction_Name.IMMED, [r_a, k]))
+                    program.append(Static_Instruction(Instruction_Name.IMMED, [r_a, k]))
                     
                 r_v, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
-                    program.append(Dynamic_Instruction(Instruction_Name.IMMED, [r_v, k]))
+                    program.append(Static_Instruction(Instruction_Name.IMMED, [r_v, k]))
 
                 operands = [r_a, r_v]
         
-        program.append(Dynamic_Instruction(name, operands))
+        program.append(Static_Instruction(name, operands))
 
     program.append(None)
 
