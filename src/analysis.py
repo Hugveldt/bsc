@@ -2,7 +2,7 @@ from copy import deepcopy
 from typing import Dict, List, Tuple
 from in_order import InO_Processor, State_InO
 from STT import COMMIT_WIDTH, FETCH_WIDTH, ReorderBuffer, State_STT, M_Event, M_Event_Name, M_Event_Type, BrPr, Taint, commit_event, execute_event, fetch_event, tainted, underSpec
-from STT_program import Dynamic_Instruction, Instruction_Name, Program, print_program
+from STT_program import Dynamic_Instruction, Instruction_Name, Program, print_program, random_program
 import in_order
 import STT
 import STT_program
@@ -135,8 +135,11 @@ def PAIR_Extended_Processor(P: Program, k_0: State_Extended, k_1: State_Extended
         t += 1
 
         if le:
+            # TODO: Change assertions to some kind of result logging?
             assert(low_equivalent(k_0, k_1))
             assert(traces[0] == traces[1])
+
+    print(f"\n** End States **\n\nk1 = (STT, in_order, mispredicted, doomed):\n{k_1.STT}\n\n{k_1.in_order}\n\n---- Mispredicted ---------\n\t{k_1.mispredicted}\n\n---- Doomed ---------------\n\t{k_1.doomed.doomed}\n\n---------------------------\n\nk2 = (STT, in_order, mispredicted, doomed):\n{k_1.STT}\n\n{k_1.in_order}\n\n---- Mispredicted ---------\n\t{k_1.mispredicted}\n\n---- Doomed ---------------\n\t{k_1.doomed.doomed}\n\n---------------------------")
     
 
 def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extended, bool, List[M_Event]]:
@@ -156,7 +159,7 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
         e: M_Event = commit_event(instruction)
         if enabled(k, e, t):
             k = perform(k, e, t)
-            m_event_trace.append(e)
+            m_event_trace.append(e.name)
             #print(f"\nafter commit: {k}\n{k.STT}")
         else:
             break
@@ -171,7 +174,7 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
         k.STT.T = Taint(new_yrot, new_rt_YRoT, new_rt_LL)
 
         k = perform(k, e, t)
-        m_event_trace.append(e)
+        m_event_trace.append(e.name)
         #print(f"\nafter fetch: {k}\n{k.STT}")
         if e.name == M_Event_Name.FETCH_BRANCH and e.rob_index is None:
             break
@@ -183,7 +186,7 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
 
         if enabled(k, e, t) and ready(k_snapshot, e, t) and not delayed(k_snapshot, e, t):
             k = perform(k, e, t)
-            m_event_trace.append(e)
+            m_event_trace.append(e.name)
             #print(f"\nafter execute: {k}\n{k.STT}")
             if e.name is M_Event_Name.EXECUTE_BRANCH_FAIL:
                 break
@@ -272,7 +275,6 @@ def low_equivalent(k1: State_Extended, k2: State_Extended) -> bool:
             k2_non_doomed[PRegID] = k2.STT.reg[PRegID]
 
     if k1_non_doomed == k2_non_doomed:
-        print("k1 and k2 are low equivalent!")
         return True
     else:
         print("Non-doomed registers are not equal...")
