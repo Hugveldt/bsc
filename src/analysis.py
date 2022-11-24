@@ -126,7 +126,7 @@ def PAIR_Extended_Processor(P: Program, k_0: State_Extended, k_1: State_Extended
     halt = [False, False]
     traces = [[], []]
 
-    while not any(halt):
+    while not any(halt) and t <= 200:
         le: bool = low_equivalent(k_0, k_1)
 
         k_0, halt[0], traces[0] = Extended_Logic(P, k_0, t)
@@ -170,8 +170,7 @@ def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extende
         instruction = P[k.STT.pc]
         e: M_Event = fetch_event(instruction)
 
-        new_yrot, new_rt_YRoT, new_rt_LL = STT.taint(k.STT, instruction)
-        k.STT.T = Taint(new_yrot, new_rt_YRoT, new_rt_LL)
+        k.STT.T = STT.taint(k.STT, instruction)
 
         k = perform(k, e, t)
         m_event_trace.append(e.name)
@@ -279,3 +278,22 @@ def low_equivalent(k1: State_Extended, k2: State_Extended) -> bool:
     else:
         print("Non-doomed registers are not equal...")
         return False
+
+def experiment(num_runs: int, prog_length: int) -> dict:
+    failures = {}
+
+    for i in range(num_runs):
+        k_0 = deepcopy(Extended_init)
+        k_1 = deepcopy(Extended_init)
+        prog = random_program(prog_length)
+        try:
+            PAIR_Extended_Processor(prog, k_0, k_1)
+        except AssertionError:
+            failures[i] = (prog, k_0, k_1)
+
+    if failures:
+        print(f'The theorem did not hold in run(s): {failures.keys()}')
+
+    return failures
+
+
