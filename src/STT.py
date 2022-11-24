@@ -209,7 +209,7 @@ def underSpec(ckpt: List[Tuple[int, int, Dict]], i: int) -> bool:
             return True
     return False
 
-def taint(state: State_STT, static_instruction: Static_Instruction) -> Tuple[Dict, Dict, Dict]:
+def taint(state: State_STT, static_instruction: Static_Instruction) -> Taint:
     new_yrot: Dict = deepcopy(state.T.yrot)
     new_yrot[state.rob.tail] = newYRoT(state, static_instruction)
 
@@ -222,7 +222,7 @@ def taint(state: State_STT, static_instruction: Static_Instruction) -> Tuple[Dic
         new_rt_YRoT[r_d] = newYRoT(state, static_instruction)
         new_rt_LL[r_d]   = state.rob.tail if static_instruction.name is Instruction_Name.LOAD else None
 
-    return tuple([new_yrot, new_rt_YRoT, new_rt_LL])
+    return Taint(new_yrot, new_rt_YRoT, new_rt_LL)
 
 def taintingInstr(state: State_STT, r: int) -> int:
     return state.T.rt_YRoT[r] if state.T.rt_LL[r] is None else state.T.rt_LL[r]
