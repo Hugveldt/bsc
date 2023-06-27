@@ -292,7 +292,9 @@ def experiment(num_runs: int, prog_length: int) -> dict:
             failures[i] = (prog, k_0, k_1)
 
     if failures:
-        print(f'The theorem did not hold in run(s): {failures.keys()}')
+        print(f'FAILURE: The theorem did not hold in run(s): {failures.keys()}')
+    else:
+        print('SUCCESS: The theorem held in all runs')
 
     return failures
 

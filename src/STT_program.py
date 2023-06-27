@@ -77,8 +77,6 @@ def random_program(min_length: int) -> Program:
                 operands = [r_c, r_d]
 
             case Instruction_Name.LOAD:
-                # TODO: currently doesn't work at it produces loads from "un-stored" addresses
-
                 r_d, reg_is_new, registers = random_register(registers)
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
@@ -88,11 +86,6 @@ def random_program(min_length: int) -> Program:
                 if reg_is_new:
                     k = random.randint(0, len(registers)-1)
                     program.append(Static_Instruction(Instruction_Name.IMMED, [r_a, k]))
-
-                # For now this just creates matching stores immediately before every load
-                r_v, reg_is_new, registers = random_register(registers=registers, only_reuse=True)
-                assert(not reg_is_new)
-                program.append(Static_Instruction(Instruction_Name.STORE, [r_a, r_v]))
 
                 operands = [r_d, r_a]
             

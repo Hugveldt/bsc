@@ -52,7 +52,7 @@ def branch(state: State_InO, r_c: int, r_d: int):
 
 def load(state: State_InO, r_d: int, r_a: int):
     state.pc += 1
-    state.reg[r_d] = state.mem[state.reg[r_a]]
+    state.reg[r_d] = state.mem[state.reg[r_a]] if state.reg[r_a] in state.mem else 0
 
 def store(state: State_InO, r_a: int, r_v: int):
     state.pc += 1
