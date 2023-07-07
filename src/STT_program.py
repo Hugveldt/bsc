@@ -126,6 +126,15 @@ def print_program(program: Program) -> None:
             return
         print(f"[{i}]\t{instruction.name.name}\t{instruction.operands}")
 
+from collections import Counter
+
+def instruction_breakdown(program: Program) -> None:
+    names = [ instruction.name for instruction in program if instruction is not None]
+    count = Counter(names)
+    return count.most_common(5)
+
+
+
 
 loop: Program = [
     Static_Instruction(Instruction_Name.IMMED,  [0, 10]),
