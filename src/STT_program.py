@@ -87,6 +87,11 @@ def random_program(min_length: int) -> Program:
                     k = random.randint(0, len(registers)-1)
                     program.append(Static_Instruction(Instruction_Name.IMMED, [r_a, k]))
 
+                # For now this just creates matching stores immediately before every load
+                r_v, reg_is_new, registers = random_register(registers=registers, only_reuse=True)
+                assert(not reg_is_new)
+                program.append(Static_Instruction(Instruction_Name.STORE, [r_a, r_v]))
+
                 operands = [r_d, r_a]
             
             case Instruction_Name.STORE:
