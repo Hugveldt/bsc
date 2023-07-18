@@ -6,6 +6,7 @@ from STT_program import Dynamic_Instruction, Instruction_Name, Program, print_pr
 import in_order
 import STT
 import STT_program
+import random
 
 class Doomed:
     def __init__(self, doomed: Dict):
@@ -120,7 +121,6 @@ def LIST_Extended_Processor(P: Program, K: List[State_Extended]):
         #    test low_equivalent(k_1, k_2)
         #    test traces[k_1] == traces[k_2]
 
-# TODO: finalise this
 def PAIR_Extended_Processor(P: Program, k_0: State_Extended, k_1: State_Extended):
     t = 0
     halt = [False, False]
@@ -129,18 +129,30 @@ def PAIR_Extended_Processor(P: Program, k_0: State_Extended, k_1: State_Extended
     while not any(halt) and t <= 200:
         le: bool = low_equivalent(k_0, k_1)
 
+        k_0 = Randomise_Doomed(k_0)
+        k_1 = Randomise_Doomed(k_1)
+
         k_0, halt[0], traces[0] = Extended_Logic(P, k_0, t)
         k_1, halt[1], traces[1] = Extended_Logic(P, k_1, t)
 
         t += 1
 
         if le:
-            # TODO: Change assertions to some kind of result logging?
             assert(low_equivalent(k_0, k_1))
             assert(traces[0] == traces[1])
 
     print(f"\n** End States **\n\nk1 = (STT, in_order, mispredicted, doomed):\n{k_1.STT}\n\n{k_1.in_order}\n\n---- Mispredicted ---------\n\t{k_1.mispredicted}\n\n---- Doomed ---------------\n\t{k_1.doomed.doomed}\n\n---------------------------\n\nk2 = (STT, in_order, mispredicted, doomed):\n{k_1.STT}\n\n{k_1.in_order}\n\n---- Mispredicted ---------\n\t{k_1.mispredicted}\n\n---- Doomed ---------------\n\t{k_1.doomed.doomed}\n\n---------------------------")
     
+def Randomise_Doomed(k: State_Extended) -> State_Extended:
+    rand_k = deepcopy(k)
+
+    for PRegID in k.doomed.doomed:
+        rand_value = random.choice(list(k.STT.mem.keys())) # constrain random values to be valid register operands
+        rand_k.STT.mem[PRegID] = rand_value
+        if rand_value not in rand_k.STT.T.rt_YRoT: # attempt to generate taint metadata where necessary
+            rand_k.STT.T.rt_YRoT[rand_value] = None
+
+    return rand_k
 
 def Extended_Logic(P: Program, k: State_Extended, t: int) -> Tuple[State_Extended, bool, List[M_Event]]:
     k_snapshot: State_Extended = deepcopy(k)
